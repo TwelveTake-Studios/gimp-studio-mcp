@@ -1,0 +1,1 @@
+# Golden PNGs land here (regenerate: pytest tests/gimp --run-gimp --regen-golden).

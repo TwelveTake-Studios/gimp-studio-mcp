@@ -1,0 +1,21 @@
+{
+  "_meta": {
+    "about": "Generic garment-colour presets for knockout_background(shirt=...). Approximate, representative values tuned for DTF background removal; brand-specific colour packs may follow. Reference only - no guarantee of exact garment match.",
+    "version": 1,
+    "fields": "hex=target colour; mode=knockout technique (subtract=color-to-alpha for dark garments where black=shirt-shows-through; hard=select+clear for light/solid); tolerance=match aggressiveness 0-1; note=caveats"
+  },
+  "presets": {
+    "black":        {"display": "Black",        "hex": "#1c1c1c", "mode": "subtract", "tolerance": 0.18, "note": "Real black tees photograph ~#1c1c1c, not pure black."},
+    "white":        {"display": "White",        "hex": "#ffffff", "mode": "hard",     "tolerance": 0.10},
+    "navy":         {"display": "Navy",         "hex": "#1f2937", "mode": "subtract", "tolerance": 0.18},
+    "charcoal":     {"display": "Charcoal",     "hex": "#3a3f44", "mode": "subtract", "tolerance": 0.18},
+    "heather_gray": {"display": "Heather Grey", "hex": "#b3b6b8", "hex2": "#cfd2d4", "mode": "hard", "tolerance": 0.26, "note": "Heather is a mottled 2-thread blend; wider tolerance, review the result."},
+    "sport_gray":   {"display": "Sport Grey",   "hex": "#b0b3b5", "mode": "hard",     "tolerance": 0.22, "note": "Lightly heathered; review the result."},
+    "royal":        {"display": "Royal Blue",   "hex": "#1e3a8a", "mode": "subtract", "tolerance": 0.20},
+    "red":          {"display": "Red",          "hex": "#b21f35", "mode": "hard",     "tolerance": 0.20, "note": "Mid-tone: hard removal so reds in the art are not eaten."},
+    "maroon":       {"display": "Maroon",       "hex": "#4c1622", "mode": "subtract", "tolerance": 0.20},
+    "forest":       {"display": "Forest Green", "hex": "#1f3d2b", "mode": "subtract", "tolerance": 0.20},
+    "kelly":        {"display": "Kelly Green",  "hex": "#1f7a3d", "mode": "hard",     "tolerance": 0.22, "note": "Mid-tone: hard removal."},
+    "sand":         {"display": "Sand / Natural","hex": "#d9cbb0", "mode": "hard",    "tolerance": 0.16}
+  }
+}

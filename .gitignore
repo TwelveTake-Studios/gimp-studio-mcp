@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Local / scratch
+*.log
+scratch/
+tmp/
+
+# Machine-specific local MCP registration (absolute interpreter path; not portable)
+.mcp.json
+
+# Test artifacts (rendered images, golden diffs output)
+tests/_output/

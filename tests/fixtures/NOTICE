@@ -1,0 +1,13 @@
+Test fixtures for gimp-mcp Tier 2/3.
+
+Everything under tests/fixtures/ is mirrored verbatim into the public release by
+scripts/sync-to-public.ps1 (whose leak guard checks filenames, not licenses).
+Therefore ONLY commit license-clean assets here:
+
+  * golden/   — self-generated golden PNGs produced by our own pipeline against a
+                pinned GIMP (regenerate with: pytest tests/gimp --run-gimp
+                --regen-golden). Tiny (<=256px); no git-lfs.
+  * fonts/    — only license-clean fonts (e.g. DejaVu / Noto subsets) if/when the
+                text tier needs a pinned face. Add the upstream license text here.
+
+Rendered/diff artifacts go to tests/_output/ (gitignored), never here.

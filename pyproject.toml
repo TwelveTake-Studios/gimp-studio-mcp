@@ -1,0 +1,114 @@
+# pyproject.toml — twelvetake-gimp-studio-mcp (the external MCP-server side)
+#
+# NOTE: This packages the EXTERNAL MCP server only. The GIMP-side bridge
+# (src/gimp_mcp/bridge/gimp_side.py) runs inside GIMP's own Python (PyGObject)
+# and is copied into GIMP's plug-ins directory by `gimp-mcp install-plugin`.
+#
+# Distribution name is brand-prefixed (twelvetake-…) to avoid clashing with the
+# existing maorcc/gimp-mcp on PyPI; the import package stays `gimp_mcp` and the
+# console script stays `gimp-mcp`.
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "twelvetake-gimp-studio-mcp"
+version = "0.1.0"
+description = "A GIMP 3.x MCP server with structured returns, a compat layer, safety checkpoints, and print/DTF tooling."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    { name = "TwelveTake Studios LLC", email = "contact@twelvetake.com" },
+]
+keywords = [
+    "gimp",
+    "mcp",
+    "model-context-protocol",
+    "image-editing",
+    "automation",
+    "dtf",
+    "print",
+    "claude",
+    "ai",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Multimedia :: Graphics :: Editors",
+    "Topic :: Multimedia :: Graphics :: Graphics Conversion",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "mcp>=1.27,<2",                 # Model Context Protocol SDK. 1.27+ = stdio-server
+                                    # robustness fixes (non-UTF-8 stdin, mid-request
+                                    # close); cap <2 ahead of the breaking v2 major.
+    # The socket bridge to GIMP uses only the Python standard library.
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+    "Pillow>=10",                   # Tier-3 golden I/O + max-abs-diff
+    "numpy>=1.24",                  # Tier-3 diff metrics + numpy SSIM fallback
+]
+# Optional stronger SSIM backstop. The Tier-3 compare falls back to a
+# self-contained numpy SSIM when scikit-image is absent, so this is not required.
+test-image = [
+    "scikit-image>=0.22",
+]
+
+[project.urls]
+Homepage = "https://twelvetake.com"
+Repository = "https://github.com/TwelveTake-Studios/gimp-studio-mcp"
+Issues = "https://github.com/TwelveTake-Studios/gimp-studio-mcp/issues"
+Funding = "https://buymeacoffee.com/twelvetake"
+
+[project.scripts]
+gimp-mcp = "gimp_mcp.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gimp_mcp"]
+
+# The sdist ships only public-safe trees + root docs; private design and
+# working docs are excluded.
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/",
+    "tests/",
+    ".github/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "pyproject.toml",
+]
+exclude = [
+    "**/__pycache__",
+    "**/*.pyc",
+    "tests/_output/",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "gimp: Tier 2/3 — requires a real (headless) GIMP; skipped unless --run-gimp",
+    "golden: Tier 3 — golden-image pixel comparison (tolerance-based)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+# spike/ = throwaway precursor harnesses (not maintained); scratch/ = local junk.
+extend-exclude = ["spike", "scratch"]
