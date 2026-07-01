@@ -106,6 +106,24 @@ def gimp():
     ctx.close()
 
 
+@pytest.fixture(autouse=True)
+def _isolate_gimp_context(gimp):
+    """Snapshot + restore the GIMP context around EVERY Tier 2/3 test.
+
+    ``Gimp.context_push()``/``pop()`` save and restore the whole context (foreground,
+    background, opacity, paint mode, interpolation, active brush/pattern/gradient…), so
+    a test (or its fixture) that changes context — even without its own push/pop — can't
+    leak that state into a later test. This keeps the golden compares order-independent:
+    without it, a fixture that sets the foreground and forgets to restore it can corrupt
+    a *different* group's fixture build when the two happen to run back-to-back.
+    """
+    gimp.run("Gimp.context_push()", undo_group=False)
+    try:
+        yield
+    finally:
+        gimp.run("Gimp.context_pop()", undo_group=False)
+
+
 # --- Tier-3 golden-image comparison ----------------------------------------
 _EXPORT_PNG = """
 img = find_image(args.get("image"))
