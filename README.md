@@ -8,6 +8,7 @@ A [TwelveTake Studios](https://twelvetake.com) project.
 [![Tools](https://img.shields.io/badge/tools-117-blue)](https://github.com/TwelveTake-Studios/gimp-studio-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow)](https://buymeacoffee.com/twelvetake)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-support-ff5e5b)](https://ko-fi.com/twelvetake)
 
 A comprehensive **GIMP 3.x MCP server** that gives an AI agent full, reliable control of GIMP — with structured returns, real error capture, a GIMP-3 compatibility layer, safety checkpoints, and print/DTF-aware tooling.
 
