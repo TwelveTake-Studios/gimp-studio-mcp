@@ -10,11 +10,7 @@ _META_CODE = """
 img = find_image(args.get("image"))
 f = img.get_file()
 layers = img.get_layers()
-res = img.get_resolution()
-try:
-    xres, yres = (res[1], res[2]) if len(res) >= 3 else (res[0], res[1])
-except Exception:
-    xres = yres = None
+xres, yres = compat.image_resolution(img)
 _result = {
     "image": img.get_id(),
     "name": f.get_basename() if f else None,

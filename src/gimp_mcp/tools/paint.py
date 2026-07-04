@@ -45,16 +45,22 @@ _result = {"layer": drw.get_id(), "image": drw.get_image().get_id(), "fill_type"
 
 _BUCKET_FILL_CODE = """
 drw = find_drawable(args.get("image"), args.get("layer"))
-if args.get("color") is not None:
-    Gimp.context_set_foreground(compat.color(args["color"]))
-if args.get("opacity") is not None:
-    Gimp.context_set_opacity(float(args["opacity"]))
-mode = args.get("mode")
-if mode:
-    m = getattr(Gimp.LayerMode, str(mode).upper().replace("-", "_"), Gimp.LayerMode.NORMAL)
-    Gimp.context_set_paint_mode(m)
-# edit_bucket_fill(fill_type, x, y) — flood-fills the seed point with the fg color.
-drw.edit_bucket_fill(Gimp.FillType.FOREGROUND, float(args["x"]), float(args["y"]))
+# Guard context: a paint OP sets fg/opacity/mode to draw, but must not leak them into
+# the session (set_fg / set_paint_opacity are the tools for persistent changes).
+Gimp.context_push()
+try:
+    if args.get("color") is not None:
+        Gimp.context_set_foreground(compat.color(args["color"]))
+    if args.get("opacity") is not None:
+        Gimp.context_set_opacity(float(args["opacity"]))
+    mode = args.get("mode")
+    if mode:
+        m = getattr(Gimp.LayerMode, str(mode).upper().replace("-", "_"), Gimp.LayerMode.NORMAL)
+        Gimp.context_set_paint_mode(m)
+    # edit_bucket_fill(fill_type, x, y) — flood-fills the seed point with the fg color.
+    drw.edit_bucket_fill(Gimp.FillType.FOREGROUND, float(args["x"]), float(args["y"]))
+finally:
+    Gimp.context_pop()
 Gimp.displays_flush()
 _result = {"layer": drw.get_id(), "image": drw.get_image().get_id(), "x": args["x"], "y": args["y"]}
 """
@@ -62,59 +68,75 @@ _result = {"layer": drw.get_id(), "image": drw.get_image().get_id(), "x": args["
 # Long signature flagged heavily — see api_risks.
 _GRADIENT_CODE = """
 drw = find_drawable(args.get("image"), args.get("layer"))
-if args.get("gradient"):
-    grad = Gimp.Gradient.get_by_name(args["gradient"])
-    if grad is None:
-        raise ValueError("no gradient named %r" % args["gradient"])
-    Gimp.context_set_gradient(grad)
-else:
-    Gimp.context_set_gradient_fg_bg_rgb()
 gtype = str(args.get("gradient_type", "linear")).upper().replace("-", "_")
 gt = getattr(Gimp.GradientType, gtype, Gimp.GradientType.LINEAR)
-# edit_gradient_fill(gradient_type, offset, supersample, supersample_max_depth,
-#                    supersample_threshold, dither, x1, y1, x2, y2)
-drw.edit_gradient_fill(gt, 0.0, False, 1, 0.0, True,
-                       float(args["x1"]), float(args["y1"]),
-                       float(args["x2"]), float(args["y2"]))
+Gimp.context_push()   # a paint OP: don't leak the chosen gradient into the session
+try:
+    if args.get("gradient"):
+        grad = Gimp.Gradient.get_by_name(args["gradient"])
+        if grad is None:
+            raise ValueError("no gradient named %r" % args["gradient"])
+        Gimp.context_set_gradient(grad)
+    else:
+        Gimp.context_set_gradient_fg_bg_rgb()
+    # edit_gradient_fill(gradient_type, offset, supersample, supersample_max_depth,
+    #                    supersample_threshold, dither, x1, y1, x2, y2)
+    drw.edit_gradient_fill(gt, 0.0, False, 1, 0.0, True,
+                           float(args["x1"]), float(args["y1"]),
+                           float(args["x2"]), float(args["y2"]))
+finally:
+    Gimp.context_pop()
 Gimp.displays_flush()
 _result = {"layer": drw.get_id(), "image": drw.get_image().get_id(), "gradient_type": gtype}
 """
 
 _STROKE_SELECTION_CODE = """
 drw = find_drawable(args.get("image"), args.get("layer"))
-if args.get("color") is not None:
-    Gimp.context_set_foreground(compat.color(args["color"]))
-if args.get("line_width") is not None:
-    Gimp.context_set_line_width(float(args["line_width"]))
-drw.edit_stroke_selection()
+Gimp.context_push()   # a paint OP: don't leak fg / line width into the session
+try:
+    if args.get("color") is not None:
+        Gimp.context_set_foreground(compat.color(args["color"]))
+    if args.get("line_width") is not None:
+        Gimp.context_set_line_width(float(args["line_width"]))
+    drw.edit_stroke_selection()
+finally:
+    Gimp.context_pop()
 Gimp.displays_flush()
 _result = {"layer": drw.get_id(), "image": drw.get_image().get_id(), "stroked": True}
 """
 
 _PENCIL_CODE = """
 drw = find_drawable(args.get("image"), args.get("layer"))
-if args.get("color") is not None:
-    Gimp.context_set_foreground(compat.color(args["color"]))
 pts = [float(v) for v in args["points"]]
-# pencil(drawable, strokes) — strokes is a flat [x1,y1,x2,y2,...] array.
-Gimp.pencil(drw, pts)
+Gimp.context_push()   # a paint OP: don't leak fg into the session
+try:
+    if args.get("color") is not None:
+        Gimp.context_set_foreground(compat.color(args["color"]))
+    # pencil(drawable, strokes) — strokes is a flat [x1,y1,x2,y2,...] array.
+    Gimp.pencil(drw, pts)
+finally:
+    Gimp.context_pop()
 Gimp.displays_flush()
 _result = {"layer": drw.get_id(), "image": drw.get_image().get_id(), "n_points": len(pts) // 2}
 """
 
 _PAINTBRUSH_CODE = """
 drw = find_drawable(args.get("image"), args.get("layer"))
-if args.get("color") is not None:
-    Gimp.context_set_foreground(compat.color(args["color"]))
-if args.get("brush"):
-    b = Gimp.Brush.get_by_name(args["brush"])
-    if b is not None:
-        Gimp.context_set_brush(b)
-if args.get("size") is not None:
-    Gimp.context_set_brush_size(float(args["size"]))
 pts = [float(v) for v in args["points"]]
-# paintbrush_default(drawable, strokes) — uses current context brush/size.
-Gimp.paintbrush_default(drw, pts)
+Gimp.context_push()   # a paint OP: don't leak fg / brush / size into the session
+try:
+    if args.get("color") is not None:
+        Gimp.context_set_foreground(compat.color(args["color"]))
+    if args.get("brush"):
+        b = Gimp.Brush.get_by_name(args["brush"])
+        if b is not None:
+            Gimp.context_set_brush(b)
+    if args.get("size") is not None:
+        Gimp.context_set_brush_size(float(args["size"]))
+    # paintbrush_default(drawable, strokes) — uses current context brush/size.
+    Gimp.paintbrush_default(drw, pts)
+finally:
+    Gimp.context_pop()
 Gimp.displays_flush()
 _result = {"layer": drw.get_id(), "image": drw.get_image().get_id(), "n_points": len(pts) // 2}
 """

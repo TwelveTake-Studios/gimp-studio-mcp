@@ -138,6 +138,30 @@ def test_bucket_fill(gimp, grp, fx):
     assert outside[0] >= 250 and outside[1] >= 250 and outside[2] >= 250, outside
 
 
+def _fg_opacity(gimp):
+    r = gimp.run("_result = {'fg': list(compat.rgba(Gimp.context_get_foreground())),"
+                 "           'op': float(Gimp.context_get_opacity())}",
+                 undo_group=False).to_dict()
+    assert r["ok"], r["error"]
+    return r["result"]["fg"], r["result"]["op"]
+
+
+def test_paint_ops_restore_context(gimp, grp, fx):
+    """A paint OP sets fg/opacity/etc. to draw but must not leak them into the session
+    (only set_fg / set_paint_opacity persist). #18 polish."""
+    gimp.run("Gimp.context_set_foreground(compat.color((0, 0, 255)))\n"
+             "Gimp.context_set_opacity(42.0)", undo_group=False)
+    grp._bucket_fill(gimp, 20, 20, color=[0, 255, 0], opacity=88.0,
+                     layer=fx["layer"], image=fx["image"])
+    fg, op = _fg_opacity(gimp)
+    assert fg[2] >= 250 and fg[0] <= 5, ("bucket_fill leaked foreground", fg)
+    assert abs(op - 42.0) < 0.5, ("bucket_fill leaked opacity", op)
+    grp._paintbrush(gimp, [12, 12, 48, 36], color=[255, 0, 0],
+                    layer=fx["layer"], image=fx["image"])
+    fg2, _ = _fg_opacity(gimp)
+    assert fg2[2] >= 250 and fg2[0] <= 5, ("paintbrush leaked foreground", fg2)
+
+
 def test_gradient(gimp, grp, fx):
     # fg=red -> bg=blue linear gradient along x across the selection.
     assert grp._set_fg(gimp, [255, 0, 0])["ok"]

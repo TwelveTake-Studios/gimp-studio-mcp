@@ -207,6 +207,23 @@ def test_fuzzy_select(gimp, grp, fx):
     assert res["bounds"] == [16, 12, 32, 24]
 
 
+def _sample_threshold(gimp):
+    r = gimp.run("_result = {'t': float(Gimp.context_get_sample_threshold())}",
+                 undo_group=False).to_dict()
+    assert r["ok"], r["error"]
+    return r["result"]["t"]
+
+
+def test_by_color_and_fuzzy_restore_context(gimp, grp, fx):
+    """select_by_color / fuzzy_select set the sample threshold inside their own
+    push/pop, so they must NOT leak it into the session context (#18 polish)."""
+    gimp.run("Gimp.context_set_sample_threshold(0.99)", undo_group=False)
+    grp._select_by_color(gimp, "red", 0.2, "replace", None, fx["id"])
+    assert abs(_sample_threshold(gimp) - 0.99) < 0.005, "select_by_color leaked threshold"
+    grp._fuzzy_select(gimp, 24, 20, 0.33, "replace", None, fx["id"])
+    assert abs(_sample_threshold(gimp) - 0.99) < 0.005, "fuzzy_select leaked threshold"
+
+
 # --- alpha -----------------------------------------------------------------
 def test_select_from_alpha(gimp, grp, fx):
     img = fx["id"]

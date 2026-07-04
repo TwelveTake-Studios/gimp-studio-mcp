@@ -14,7 +14,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "twelvetake-gimp-studio-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "A GIMP 3.x MCP server with structured returns, a compat layer, safety checkpoints, and print/DTF tooling."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -62,6 +62,7 @@ dev = [
     "ruff>=0.5",
     "Pillow>=10",                   # Tier-3 golden I/O + max-abs-diff
     "numpy>=1.24",                  # Tier-3 diff metrics + numpy SSIM fallback
+    "pytest-rerunfailures>=14",     # rerun transient session-GIMP flakes in the Tier 2/3 suite
 ]
 # Optional stronger SSIM backstop. The Tier-3 compare falls back to a
 # self-contained numpy SSIM when scikit-image is absent, so this is not required.

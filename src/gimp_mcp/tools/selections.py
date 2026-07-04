@@ -50,16 +50,24 @@ _BY_COLOR_CODE = _OP_HELPER + """
 img = find_image(args.get("image"))
 drw = find_drawable(args.get("image"), args.get("layer"))
 op = _channel_op(args.get("op"))
-Gimp.context_set_sample_threshold(float(args["threshold"]))
-img.select_color(op, drw, compat.color(args["color"]))
+Gimp.context_push()
+try:
+    Gimp.context_set_sample_threshold(float(args["threshold"]))
+    img.select_color(op, drw, compat.color(args["color"]))
+finally:
+    Gimp.context_pop()
 """ + _BOUNDS_TAIL
 
 _FUZZY_CODE = _OP_HELPER + """
 img = find_image(args.get("image"))
 drw = find_drawable(args.get("image"), args.get("layer"))
 op = _channel_op(args.get("op"))
-Gimp.context_set_sample_threshold(float(args["threshold"]))
-img.select_contiguous_color(op, drw, float(args["x"]), float(args["y"]))
+Gimp.context_push()
+try:
+    Gimp.context_set_sample_threshold(float(args["threshold"]))
+    img.select_contiguous_color(op, drw, float(args["x"]), float(args["y"]))
+finally:
+    Gimp.context_pop()
 """ + _BOUNDS_TAIL
 
 _ALL_CODE = """

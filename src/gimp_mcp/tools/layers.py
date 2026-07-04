@@ -198,7 +198,7 @@ _MOVE_CODE = """
 img = find_image(args.get("image"))
 layer = find_drawable(args.get("image"), args.get("layer"))
 layer.set_offsets(int(args["x"]), int(args["y"]))
-ox, oy = layer.get_offsets()[1], layer.get_offsets()[2]
+ox, oy = compat.layer_offsets(layer)
 _result = {"layer": layer.get_id(), "image": img.get_id(),
            "x": ox, "y": oy}
 """
@@ -207,8 +207,7 @@ _result = {"layer": layer.get_id(), "image": img.get_id(),
 _OFFSET_CODE = """
 img = find_image(args.get("image"))
 layer = find_drawable(args.get("image"), args.get("layer"))
-off = layer.get_offsets()
-cx, cy = (off[1], off[2]) if len(off) >= 3 else (off[0], off[1])
+cx, cy = compat.layer_offsets(layer)
 nx = cx + int(args.get("dx", 0))
 ny = cy + int(args.get("dy", 0))
 layer.set_offsets(nx, ny)

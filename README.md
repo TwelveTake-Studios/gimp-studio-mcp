@@ -2,6 +2,9 @@
 
 A [TwelveTake Studios](https://twelvetake.com) project.
 
+[![PyPI](https://img.shields.io/pypi/v/twelvetake-gimp-studio-mcp)](https://pypi.org/project/twelvetake-gimp-studio-mcp/)
+[![CI](https://github.com/TwelveTake-Studios/gimp-studio-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/TwelveTake-Studios/gimp-studio-mcp/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/pypi/pyversions/twelvetake-gimp-studio-mcp)](https://pypi.org/project/twelvetake-gimp-studio-mcp/)
 [![Tools](https://img.shields.io/badge/tools-117-blue)](https://github.com/TwelveTake-Studios/gimp-studio-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow)](https://buymeacoffee.com/twelvetake)

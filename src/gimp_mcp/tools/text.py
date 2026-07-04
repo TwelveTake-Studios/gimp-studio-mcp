@@ -69,8 +69,7 @@ x = args.get("x"); y = args.get("y")
 if x is not None and y is not None:
     layer.set_offsets(int(x), int(y))
 
-off = layer.get_offsets()
-ox, oy = (off[-2], off[-1]) if off else (None, None)
+ox, oy = compat.layer_offsets(layer)
 _result = {
     "layer": layer.get_id(),
     "image": img.get_id(),
@@ -154,9 +153,13 @@ pos = img.get_item_position(layer)
 img.insert_layer(outline, None, pos + 1)
 outline.fill(Gimp.FillType.TRANSPARENT)
 
-# Fill the grown selection with the outline color.
-Gimp.context_set_foreground(compat.color(color))
-outline.edit_fill(Gimp.FillType.FOREGROUND)
+# Fill the grown selection with the outline color (guard context so the fg doesn't leak).
+Gimp.context_push()
+try:
+    Gimp.context_set_foreground(compat.color(color))
+    outline.edit_fill(Gimp.FillType.FOREGROUND)
+finally:
+    Gimp.context_pop()
 
 Gimp.Selection.none(img)
 _result = {"layer": outline.get_id(), "image": img.get_id(),

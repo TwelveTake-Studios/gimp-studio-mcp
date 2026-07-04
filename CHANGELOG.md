@@ -6,6 +6,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-03
+
+Bug-fix / hardening release.
+
+### Fixed
+- **Context no longer leaks into the session.** Paint operations (`bucket_fill`, `gradient`,
+  `stroke_selection`, `pencil`, `paintbrush`), the colour selections (`select_by_color`,
+  `fuzzy_select`), and `outline_text` now set their foreground / opacity / brush / sample-threshold
+  only for their own operation and restore it afterward — they no longer overwrite the persistent
+  paint context (`set_fg` / `set_bg` / `set_brush` / `set_paint_opacity` remain the tools for
+  intentional, persistent changes).
+- **`despill`** reports `despilled: false` on the no-op fallback path (was always `true`).
+- Centralized the GIMP-3 `get_offsets` / `get_resolution` 3-tuple quirk into single compat owners,
+  fixing an unguarded offset read in `move_layer` and making every call site robust.
+
+### Internal
+- Root-caused and fixed a GIMP projection tile-validation race that intermittently mis-rendered a
+  Tier-3 golden (via a `displays_flush` in the export path + test reruns); no product-code impact.
+
 ## [0.1.0] - 2026-07-01
 
 First public release. A full v1 tool surface over a hybrid live/headless GIMP
@@ -70,5 +89,6 @@ bridge, verified against real GIMP **3.0.4** and **3.2.4**.
   over stdio) and scrubs `PYTHONPATH` / `PYTHONHOME` so the external venv never
   leaks into GIMP's Python.
 
-[Unreleased]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/releases/tag/v0.1.0

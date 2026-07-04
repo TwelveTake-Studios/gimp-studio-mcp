@@ -20,7 +20,7 @@ except Exception:
     pass
 from gi.repository import Gimp, Gegl  # noqa: E402
 
-__compat_version__ = "0.3.0"  # +selection_bbox (corner form); shared tail-normalizer
+__compat_version__ = "0.4.0"  # +layer_offsets / image_resolution (get_offsets/get_resolution 3-tuple owners)
 
 
 def color(spec):
@@ -78,6 +78,30 @@ def ensure_alpha(drawable):
     """Add an alpha channel if the drawable lacks one (no-op otherwise)."""
     if not drawable.has_alpha():
         drawable.add_alpha()
+
+
+def layer_offsets(item) -> tuple:
+    """(x, y) canvas offset of a layer/item, normalizing GIMP-3's 3-tuple return.
+
+    ``Gimp.Item.get_offsets`` returns THREE values on 3.0.4 / 3.2.4 — (success, x, y) —
+    not the two the 2.10 docs imply. Tail-index (x, y are always the last two) so a
+    revert to head-indexing can't silently slide the coords by one. THE owner of this
+    quirk; every tool site routes get_offsets through here (mirrors the selection-bounds
+    fix — see ``_normalize_bounds``).
+    """
+    off = item.get_offsets()
+    return (off[-2], off[-1])
+
+
+def image_resolution(image) -> tuple:
+    """(xres, yres) DPI of an image, normalizing GIMP-3's 3-tuple return.
+
+    ``Gimp.Image.get_resolution`` returns THREE values on 3.0.4 / 3.2.4 — (success,
+    xres, yres). Tail-index. THE owner of this quirk; every tool site routes
+    get_resolution through here.
+    """
+    res = image.get_resolution()
+    return (res[-2], res[-1])
 
 
 def _normalize_bounds(b):

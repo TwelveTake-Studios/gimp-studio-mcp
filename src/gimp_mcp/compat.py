@@ -12,7 +12,8 @@ Known GIMP-3.0 quirks (owned in bridge/gimp_compat.py):
   - Colors are Gegl.Color objects, not RGB tuples.
   - Drawable.get_pixel returns a Gegl.Color that doesn't unpack as a tuple.
   - plug-in-colortoalpha is unregistered in 3.0.4 → gegl:color-to-alpha filter.
-  - Image.get_resolution() returns (success, xres, yres).
+  - Image resolution / Item offsets getters return a leading success flag
+    (owned by compat.image_resolution / compat.layer_offsets).
   - Enum renames vs 2.10/early-3.0 docs (e.g. MaskApplyType -> MaskApplyMode).
 """
 from __future__ import annotations

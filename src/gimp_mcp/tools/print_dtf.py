@@ -39,12 +39,8 @@ img = find_image(args.get("image"))
 warnings = []
 changed = False
 
-# current resolution (set_resolution/get_resolution: (ok, xres, yres))
-res = img.get_resolution()
-try:
-    cur_x, cur_y = (res[1], res[2]) if len(res) >= 3 else (res[0], res[1])
-except Exception:
-    cur_x = cur_y = 0.0
+# current resolution (get_resolution's (ok, xres, yres) quirk owned by compat)
+cur_x, cur_y = compat.image_resolution(img)
 
 dpi = args.get("dpi")
 if dpi:
@@ -160,11 +156,13 @@ else:
     img.insert_layer(base, parent, idx + 1)
     base.fill(Gimp.FillType.TRANSPARENT)
 
-    # Fill the (choked) selection with white on the new layer.
+    # Fill the (choked) selection with white on the new layer (guard context on error).
     Gimp.context_push()
-    Gimp.context_set_foreground(compat.color("white"))
-    base.edit_fill(Gimp.FillType.FOREGROUND)
-    Gimp.context_pop()
+    try:
+        Gimp.context_set_foreground(compat.color("white"))
+        base.edit_fill(Gimp.FillType.FOREGROUND)
+    finally:
+        Gimp.context_pop()
     Gimp.Selection.none(img)
 
     _result = {"created": True, "layer": base.get_id(), "image": img.get_id(),
@@ -230,8 +228,8 @@ drawable = find_drawable(args.get("image"), args.get("layer"))
 compat.ensure_alpha(drawable)
 
 W = drawable.get_width(); H = drawable.get_height()
-_off = drawable.get_offsets()            # GIMP 3.x: (success, x, y) -> tail-index
-ox = int(_off[-2]); oy = int(_off[-1])
+_ox, _oy = compat.layer_offsets(drawable)   # GIMP 3.x (success, x, y) quirk owned by compat
+ox = int(_ox); oy = int(_oy)
 
 req_mode = (args.get("mode") or "auto").lower()
 tol = float(args.get("tolerance") if args.get("tolerance") is not None else 0.15)
@@ -418,10 +416,12 @@ try:
     filt.update()
     drawable.merge_filter(filt)
     method = "color-to-alpha-soft"
+    applied = True
 except Exception as e:
     method = "noop:" + type(e).__name__
+    applied = False
 
-_result = {"despilled": True, "color": spill, "amount": amount,
+_result = {"despilled": applied, "color": spill, "amount": amount,
            "method": method, "note": "best-effort approximation",
            "layer": drawable.get_id(), "image": img.get_id()}
 """
@@ -544,12 +544,8 @@ _result = {"placed": placed, "skipped": skipped,
 # ---------------------------------------------------------------------------
 _BLEED_CODE = """
 img = find_image(args.get("image"))
-res = img.get_resolution()
-try:
-    dpi = (res[1] or res[2]) if len(res) >= 3 else res[0]
-except Exception:
-    dpi = 300.0
-dpi = float(dpi or 300.0)
+_xr, _yr = compat.image_resolution(img)
+dpi = float((_xr or _yr) or 300.0)
 
 bleed_in = float(args.get("bleed_in") if args.get("bleed_in") is not None else 0.125)
 safe_in = float(args.get("safe_in") if args.get("safe_in") is not None else 0.125)
@@ -601,11 +597,8 @@ except Exception:
     pass
 f = Gio.File.new_for_path(path)
 Gimp.file_save(Gimp.RunMode.NONINTERACTIVE, dup, f)
-res = dup.get_resolution()
-try:
-    out_dpi = (res[1] or res[2]) if len(res) >= 3 else res[0]
-except Exception:
-    out_dpi = None
+_xr, _yr = compat.image_resolution(dup)
+out_dpi = _xr or _yr
 dup.delete()
 _result = {"saved": path, "dpi": out_dpi, "alpha_preserved": True, "image": img.get_id()}
 """
