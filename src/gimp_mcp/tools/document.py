@@ -84,8 +84,11 @@ def register(mcp, ctx) -> None:
 
     @mcp.tool(name="get_metadata")
     def get_metadata(image: int | str | None = None) -> dict:
-        """Image + layer metadata (size, base type, precision, resolution, layers).
-        `image` = id/basename, or omit for the active image."""
+        """Metadata for an OPEN image: pixel width/height, resolution
+        [x_dpi, y_dpi], base type, precision, file path, dirty flag, and per-layer
+        info (size, opacity, visible, has_alpha). `image` = id/basename, or omit for
+        the active image. To inspect a file ON DISK (e.g. verify an export's pixels /
+        DPI), open_image it first, then call this on the returned id."""
         return _get_metadata(ctx, image)
 
     @mcp.tool(name="new_image")

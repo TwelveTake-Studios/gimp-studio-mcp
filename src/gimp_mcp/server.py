@@ -58,9 +58,11 @@ def build_server(ctx: GimpContext | None = None):
     """Create the FastMCP server, attach the bridge context, register tool groups."""
     from mcp.server.fastmcp import FastMCP
 
+    from .instructions import INSTRUCTIONS
+
     if ctx is None:
         ctx = GimpContext()
-    mcp = FastMCP("gimp-mcp")
+    mcp = FastMCP("gimp-mcp", instructions=INSTRUCTIONS)
     from . import tools
     tools.register_all(mcp, ctx)
     return mcp, ctx

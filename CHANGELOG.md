@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-10
+
+### Added
+- **Server-level AI `instructions`.** The MCP server now ships a concise orientation
+  string (surfaced to the model on connect via FastMCP's `instructions`): the session
+  mental model, the DTF/print golden path, and the load-bearing gotchas — e.g.
+  `print_geometry` *resamples* vs `export_dtf_png` `dpi=` only *tags*, `fill` ignores the
+  active selection, and `trim_to_content` uses the full alpha bbox — pointing to each
+  tool's own docstring for params. Lives in `gimp_mcp/instructions.py`; a Tier-1 test
+  pins its presence and wiring.
+
+### Changed
+- **Sharper agent-facing DTF/metadata docstrings** (behaviour-verified): `export_dtf_png`
+  documents that an omitted `dpi` inherits the image's current resolution and that it
+  only *tags* DPI (never resamples — use `print_geometry` for physical size);
+  `clean_for_dtf` documents that it *binarizes* alpha (hardens soft/AA edges, drops
+  low-alpha interior detail); `knockout_background` notes it auto-adds alpha on flat
+  inputs; `get_metadata` enumerates its returned fields (incl. `resolution`) and how to
+  inspect a file on disk.
+
 ## [0.1.1] - 2026-07-03
 
 Bug-fix / hardening release.

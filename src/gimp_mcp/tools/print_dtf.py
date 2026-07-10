@@ -818,7 +818,8 @@ def register(mcp, ctx) -> None:
                             feather: float = 0.0,
                             defringe: bool = True,
                             clean: bool = True) -> dict:
-        """One-click DTF background / shirt-colour knockout.
+        """One-click DTF background / shirt-colour knockout. Auto-adds an alpha
+        channel if the source is flat (no need to call add_alpha first).
 
         Colour to remove, by priority: explicit `color` (name/#hex) > `shirt=`
         garment preset (see list_shirt_presets) > `sample_xy=[x,y]` eyedropper >
@@ -854,8 +855,12 @@ def register(mcp, ctx) -> None:
     def clean_for_dtf(image: int | str | None = None,
                       layer: int | str | None = None,
                       threshold: float = 0.5) -> dict:
-        """Clear sub-threshold (faint) alpha and solidify remaining partial alpha
-        to opaque, giving crisp ink edges for film output."""
+        """Binarize the ALPHA channel at `threshold` (0-1, default 0.5): pixels
+        below it -> fully transparent (drops faint dust/noise), at/above -> fully
+        opaque (crisp ink edges for film). RGB is untouched. NOTE: this HARDENS every
+        soft/anti-aliased edge and drops intentional low-alpha interior detail
+        (faint gradients / highlights) below the threshold — skip it, or lower the
+        threshold, when the art has soft edges worth keeping."""
         return _clean_for_dtf(ctx, image, layer, threshold)
 
     @mcp.tool(name="despill")
@@ -894,6 +899,11 @@ def register(mcp, ctx) -> None:
     @mcp.tool(name="export_dtf_png")
     def export_dtf_png(path: str, image: int | str | None = None,
                        dpi: float | None = None) -> dict:
-        """Export a transparent, print-ready PNG. PRESERVES ALPHA (merges visible
-        layers without flattening). Optionally set output dpi. Source untouched."""
+        """Export a transparent, print-ready PNG. PRESERVES ALPHA — merges visible
+        layers WITHOUT flattening (flattening would drop alpha and ruin the DTF
+        transfer). DPI: if `dpi` is given the file is tagged at it; if OMITTED the
+        file inherits the image's CURRENT resolution (e.g. whatever `print_geometry`
+        set). This only writes the DPI tag — it never resamples pixels, so set the
+        physical print size with `print_geometry` FIRST, then export. Works on a
+        duplicate (source untouched); returns the saved path and the DPI tag written."""
         return _export_dtf_png(ctx, path, image, dpi)
