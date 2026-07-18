@@ -11,6 +11,7 @@ Tools:
   - grow, shrink, feather, border
   - selection_to_channel
   - select_from_path, select_from_alpha
+  - foreground_select    (SIOX/matting subject extraction from a rough hint)
 """
 from __future__ import annotations
 
@@ -123,6 +124,73 @@ drw = find_drawable(args.get("image"), args.get("layer"))
 op = _channel_op(args.get("op"))
 img.select_item(op, drw)
 """ + _BOUNDS_TAIL
+
+# foreground_select: edge-aware SUBJECT selection via gimp-drawable-foreground-extract
+# (MATTING engine = gegl:matting-global; present + headless on Windows — matting-levin is
+# Windows-disabled, so we never depend on it). SEMI-automatic: the caller supplies a ROUGH
+# subject region (a bbox, or the current selection) and we build a trimap by shrink/grow
+# (fg core 255 / unknown band 128 / bg 0), hand it to SIOX, and load the refined matte as
+# the selection. NOT one-click subject DETECTION (GIMP has no saliency model) — it refines
+# a rough hint, beating colour-select on non-flat / soft-edged backgrounds.
+_FOREGROUND_SELECT_CODE = """
+img = find_image(args.get("image"))
+drw = find_drawable(args.get("image"), args.get("layer"))
+W = img.get_width(); H = img.get_height()
+bx = args.get("x"); by = args.get("y"); bw = args.get("w"); bh = args.get("h")
+have_box = None not in (bx, by, bw, bh)
+tri = None; saved = None; _done = False
+Gimp.context_push()
+try:
+    # Snapshot any incoming selection so a mid-op failure restores it (we overwrite the
+    # selection to build the trimap; without this a failed call would wipe it).
+    if compat.selection_bounds(img)[0]:
+        saved = Gimp.Selection.save(img)
+    if have_box:
+        img.select_rectangle(Gimp.ChannelOps.REPLACE, int(bx), int(by), int(bw), int(bh))
+    _ne, _rx, _ry, _rw, _rh = compat.selection_bounds(img)
+    if not _ne:
+        raise ValueError("foreground_select needs a rough subject region: pass a valid "
+                         "bbox (x, y, w, h) or make a selection first")
+    _m = min(_rw, _rh)
+    band = args.get("band")
+    band = (max(1, min(16, _m // 8)) if band is None else max(1, int(band)))
+    band = min(band, max(1, (_m - 2) // 2))          # guards the fg core for regions >~4px
+    #                                                  (tinier ones honestly report fg_core_empty)
+    # Trimap channel: base 0 (bg); grown region -> 128 (unknown); shrunk core -> 255 (fg).
+    # foreground-extract aligns the mask by IMAGE coords, so an image-sized channel is
+    # correct even for an offset / sub-canvas drawable (verified).
+    tri = Gimp.Channel.new(img, "_gimpmcp_trimap", W, H, 100.0, Gegl.Color.new("black"))
+    img.insert_channel(tri, None, 0)
+    Gimp.Selection.grow(img, band)                   # grown region -> unknown (128)
+    Gimp.context_set_foreground(compat.color((128, 128, 128)))
+    tri.edit_fill(Gimp.FillType.FOREGROUND)
+    Gimp.Selection.shrink(img, 2 * band)             # back to region-band -> fg core (255)
+    _cne = compat.selection_bounds(img)[0]
+    if _cne:
+        Gimp.context_set_foreground(compat.color((255, 255, 255)))
+        tri.edit_fill(Gimp.FillType.FOREGROUND)
+    Gimp.Selection.none(img)
+
+    drw.foreground_extract(Gimp.ForegroundExtractMode.MATTING, tri)   # matte -> tri, in place
+    img.select_item(Gimp.ChannelOps.REPLACE, tri)    # load the refined matte as the selection
+    _sne, _sx, _sy, _sw, _sh = compat.selection_bounds(img)
+    _done = True
+finally:
+    if not _done and saved is not None and saved.is_valid():
+        img.select_item(Gimp.ChannelOps.REPLACE, saved)   # restore incoming selection on failure
+    if saved is not None and saved.is_valid():
+        img.remove_channel(saved)
+    if tri is not None and tri.is_valid():                 # never leak the scratch trimap
+        img.remove_channel(tri)
+    Gimp.context_pop()
+
+_result = {"foreground_selected": True, "engine": "matting-global",
+           "hint": ("bbox" if have_box else "selection"), "band": band,
+           "fg_core_empty": (not _cne),
+           "selection_empty": (not _sne),
+           "bounds": ([_sx, _sy, _sw, _sh] if _sne else None),
+           "layer": drw.get_id(), "image": img.get_id()}
+"""
 
 # Resolve a path by name/id or use the active path, then select from it.
 # GIMP 3.0.4 names these get_paths/get_selected_paths (NOT get_vectors); a path
@@ -242,6 +310,14 @@ def _select_from_path(ctx, path=None, op="replace", image=None):
                    image=image, undo_group=True).to_dict()
 
 
+def _foreground_select(ctx, x=None, y=None, w=None, h=None, band=None,
+                       layer=None, image=None):
+    return ctx.run(_FOREGROUND_SELECT_CODE,
+                   args={"x": x, "y": y, "w": w, "h": h, "band": band,
+                         "layer": layer, "image": image},
+                   image=image, undo_group=True).to_dict()
+
+
 def register(mcp, ctx) -> None:
 
     @mcp.tool(name="select_rect")
@@ -330,3 +406,38 @@ def register(mcp, ctx) -> None:
         paths and none is named, returns {"supported": false} (nothing to do)
         rather than erroring."""
         return _select_from_path(ctx, path, op, image)
+
+    @mcp.tool(name="foreground_select")
+    def foreground_select(x: int | None = None, y: int | None = None,
+                          w: int | None = None, h: int | None = None,
+                          band: int | None = None,
+                          layer: int | str | None = None,
+                          image: int | str | None = None) -> dict:
+        """Edge-aware SUBJECT selection via SIOX/matting
+        (gimp-drawable-foreground-extract). Refines a ROUGH hint into a clean
+        foreground selection — good for hair/soft/complex edges and backgrounds that
+        AREN'T a flat colour (where cutout_color / select_by_color fail). It is
+        SEMI-automatic: it needs a rough hint and does NOT auto-detect the subject.
+
+        Rough hint: pass a bounding box `x, y, w, h` roughly around the subject, OR
+        make a rough selection first and omit the box. `band` = px the hint is grown /
+        shrunk to form the 'unknown' boundary ring the matting solves (so the ring is
+        ~2*band wide; default auto from the region size; larger = more slack for an
+        imprecise hint). Internally builds a trimap (shrink→foreground / grow→background
+        / the ring between→unknown), runs matting, and REPLACES the selection with the
+        refined matte.
+
+        KNOWN LIMITATION — the hint must roughly FIT the subject's shape. Everything
+        inside the shrunk hint is treated as definite foreground, so if the subject does
+        NOT fill its box (an irregular shape, or several subjects with background showing
+        between them), that interior background is KEPT and only the edge band is refined.
+        A rectangular box works when the subject fills it; for an irregular subject give a
+        rough OUTLINE *selection* (omit the box) instead. This is an edge REFINER, not a
+        subject detector — for cutting a subject out of a busy scene (e.g. people in a
+        crowd) use an external model (rembg/u²-net; not built in). A subject running to
+        the image edge may also lose a thin strip there. On failure the incoming selection
+        is restored and no scratch channel is left behind.
+
+        Follow with `select_invert` + `cutout_color`/clear to knock out the background.
+        Returns {bounds, band, hint, fg_core_empty, selection_empty, layer, image}."""
+        return _foreground_select(ctx, x, y, w, h, band, layer, image)

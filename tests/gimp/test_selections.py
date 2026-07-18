@@ -88,6 +88,98 @@ def _live_bounds(gimp, image):
     return r["result"]
 
 
+# --- foreground_select (SIOX / matting) ------------------------------------
+_FG_FIXTURE = r"""
+W, H = 60, 60
+img = Gimp.Image.new(W, H, Gimp.ImageBaseType.RGB)
+lay = Gimp.Layer.new(img, "art", W, H, Gimp.ImageType.RGBA_IMAGE, 100.0, Gimp.LayerMode.NORMAL)
+img.insert_layer(lay, None, 0)
+Gimp.context_push()
+Gimp.context_set_foreground(compat.color((20, 120, 20)))
+Gimp.context_set_background(compat.color((120, 20, 120)))
+lay.edit_gradient_fill(Gimp.GradientType.LINEAR, 0.0, False, 1, 0.0, True, 0, 0, W, H)
+img.select_ellipse(Gimp.ChannelOps.REPLACE, 18, 18, 24, 24)
+Gimp.context_set_foreground(compat.color((40, 60, 220)))
+lay.edit_fill(Gimp.FillType.FOREGROUND)
+Gimp.Selection.none(img); Gimp.context_pop()
+_result = {"image": img.get_id(), "layer": lay.get_id()}
+"""
+
+
+def test_foreground_select(gimp, grp):
+    # Blue disc on a 2-colour gradient bg (plain colour-select can't isolate it). A
+    # rough bbox around the disc -> SIOX/matting refines to a subject selection that
+    # hugs the disc, not the whole canvas.
+    f = gimp.run(_FG_FIXTURE, undo_group=False).to_dict()
+    assert f["ok"], f["error"]
+    iid, lid = f["result"]["image"], f["result"]["layer"]
+    try:
+        r = grp._foreground_select(gimp, x=16, y=16, w=28, h=28, image=iid, layer=lid)
+        assert r["ok"], r["error"]
+        res = r["result"]
+        assert res["foreground_selected"] is True
+        assert res["selection_empty"] is False, res
+        assert res["fg_core_empty"] is False, res
+        assert res["engine"] == "matting-global" and res["hint"] == "bbox"
+        bx, by, bw, bh = res["bounds"]
+        assert bw < 55 and bh < 55, \
+            ("selection spans the whole canvas -> no discrimination", res["bounds"])
+        assert bx <= 30 <= bx + bw and by <= 30 <= by + bh, \
+            ("selection misses the subject", res["bounds"])
+        assert res["layer"] == lid and res["image"] == iid
+    finally:
+        gimp.run("img = Gimp.Image.get_by_id(args['i'])\nimg.delete() if img else None",
+                 args={"i": iid}, undo_group=False)
+
+
+def test_foreground_select_needs_hint(gimp, grp):
+    # No bbox and no prior selection -> must fail loudly rather than guess.
+    f = gimp.run(_FG_FIXTURE, undo_group=False).to_dict()
+    assert f["ok"], f["error"]
+    iid, lid = f["result"]["image"], f["result"]["layer"]
+    try:
+        gimp.run("img = find_image(args['i'])\nGimp.Selection.none(img)\n_result = {}",
+                 args={"i": iid}, undo_group=False)
+        r = grp._foreground_select(gimp, image=iid, layer=lid)
+        assert r["ok"] is False, r
+        assert "rough subject region" in str(r.get("error")), r.get("error")
+    finally:
+        gimp.run("img = Gimp.Image.get_by_id(args['i'])\nimg.delete() if img else None",
+                 args={"i": iid}, undo_group=False)
+
+
+_SEL_STATE = """
+img = find_image(args['i'])
+_ne, _x, _y, _w, _h = compat.selection_bounds(img)
+_result = {'sel': [bool(_ne), _x, _y, _w, _h], 'nch': len(img.get_channels())}
+"""
+
+
+def test_foreground_select_restores_on_failure(gimp, grp):
+    # A hint that yields an empty region (off-canvas bbox) must FAIL, restore the
+    # caller's pre-existing selection, and leave NO scratch trimap channel behind.
+    f = gimp.run(_FG_FIXTURE, undo_group=False).to_dict()
+    assert f["ok"], f["error"]
+    iid, lid = f["result"]["image"], f["result"]["layer"]
+    try:
+        pre = gimp.run("img = find_image(args['i'])\n"
+                       "img.select_rectangle(Gimp.ChannelOps.REPLACE, 5, 5, 20, 20)\n" + _SEL_STATE,
+                       args={"i": iid}, undo_group=False).to_dict()
+        assert pre["ok"], pre["error"]
+        nch0 = pre["result"]["nch"]
+        r = grp._foreground_select(gimp, x=1000, y=1000, w=10, h=10, image=iid, layer=lid)
+        assert r["ok"] is False, r
+        post = gimp.run(_SEL_STATE, args={"i": iid}, undo_group=False).to_dict()
+        assert post["ok"], post["error"]
+        assert post["result"]["sel"] == [True, 5, 5, 20, 20], \
+            ("incoming selection not restored on failure", post["result"]["sel"])
+        assert post["result"]["nch"] == nch0, \
+            ("scratch trimap channel leaked", post["result"]["nch"], nch0)
+    finally:
+        gimp.run("img = Gimp.Image.get_by_id(args['i'])\nimg.delete() if img else None",
+                 args={"i": iid}, undo_group=False)
+
+
 # --- geometry --------------------------------------------------------------
 def test_select_rect(gimp, grp, fx):
     img = fx["id"]

@@ -6,6 +6,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-18
+
+Cutout-quality + export-safety release. Tool surface 117 → 119.
+
+### Added
+- **`cutout_color`** (masks/alpha) — a crisp HARD colour knockout: add alpha →
+  select-by-colour → delete. The WYSIWYG counterpart to `color_to_alpha`'s soft subtract
+  (no auto-mode, no defringe, no alpha-clean) — i.e. the by-hand "select by colour →
+  delete" as one call. Takes an explicit `color` or a `sample_xy` eyedropper, plus
+  `threshold` / `contiguous` / `antialias` / `feather`.
+- **`foreground_select`** (selections) — edge-aware SUBJECT selection via
+  `gimp-drawable-foreground-extract` (SIOX / matting-global, headless). Give a rough hint
+  (a bounding box, or the current selection); it builds a trimap
+  (shrink→foreground / grow→background / the ring between→unknown), runs matting, and
+  replaces the selection with the refined matte — for backgrounds that AREN'T a flat
+  colour, where colour-select fails. See Known issues.
+
+### Changed
+- **`knockout_background`: `defringe` and `clean` now default OFF.** The always-on
+  `defringe` eroded a 1px ring off the artwork (destroying thin detail) and `clean`
+  hardened soft/anti-aliased edges — both degraded output. Both remain available as
+  opt-in (`defringe=True` / `clean=True`).
+- **`color_to_alpha`: default `transparency_threshold` 0.0 → 0.15**, and its docstring now
+  presents it as the recommended SOFT black-knockout path (e.g. `#000000` at ~0.15–0.20).
+- **`export_image` is now ALPHA-SAFE.** It previously always flattened, silently dropping
+  transparency (ruining a transparent DTF cutout). It is now format-aware: alpha is
+  preserved for formats that support it (png/tiff/webp/tga/gif) and flattened only for
+  formats that can't (jpg/bmp) or on explicit `flatten=True`; a `warning` is returned
+  whenever alpha had to be dropped. New `flatten: bool | None` parameter.
+
+### Known issues
+- **`foreground_select`'s bbox hint requires the subject to roughly FILL its box.** The
+  shrunk-box interior is treated as definite foreground, so a subject that doesn't fill
+  its box (an irregular shape, or several subjects with background between them) keeps
+  that interior background — only the edge band is refined. Use a rough OUTLINE *selection*
+  for irregular subjects; cutting a subject out of a busy scene (people in a crowd, etc.)
+  needs an external model (rembg / u²-net) — on the roadmap, not built in.
+
 ## [0.2.0] - 2026-07-10
 
 ### Added
@@ -109,7 +147,8 @@ bridge, verified against real GIMP **3.0.4** and **3.2.4**.
   over stdio) and scrubs `PYTHONPATH` / `PYTHONHOME` so the external venv never
   leaks into GIMP's Python.
 
-[Unreleased]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/releases/tag/v0.1.0

@@ -235,8 +235,8 @@ req_mode = (args.get("mode") or "auto").lower()
 tol = float(args.get("tolerance") if args.get("tolerance") is not None else 0.15)
 contiguous = bool(args.get("contiguous"))
 feather = float(args.get("feather") or 0.0)
-_df = args.get("defringe"); do_defringe = True if _df is None else bool(_df)
-_cl = args.get("clean");    do_clean = True if _cl is None else bool(_cl)
+_df = args.get("defringe"); do_defringe = False if _df is None else bool(_df)
+_cl = args.get("clean");    do_clean = False if _cl is None else bool(_cl)
 
 # --- resolve the target background colour ------------------------------------
 explicit = args.get("color")
@@ -687,7 +687,7 @@ def _list_shirt_presets(ctx=None):
 
 def _knockout_background(ctx, image=None, layer=None, color=None, shirt=None,
                          sample_xy=None, mode="auto", tolerance=None,
-                         contiguous=False, feather=0.0, defringe=True, clean=True):
+                         contiguous=False, feather=0.0, defringe=False, clean=False):
     mode = (mode or "auto").lower()
     if mode not in ("auto", "hard", "subtract"):
         return error_response(
@@ -816,10 +816,14 @@ def register(mcp, ctx) -> None:
                             tolerance: float | None = None,
                             contiguous: bool = False,
                             feather: float = 0.0,
-                            defringe: bool = True,
-                            clean: bool = True) -> dict:
+                            defringe: bool = False,
+                            clean: bool = False) -> dict:
         """One-click DTF background / shirt-colour knockout. Auto-adds an alpha
         channel if the source is flat (no need to call add_alpha first).
+
+        For a dead-simple crisp cutout of ONE flat colour, prefer `cutout_color`
+        (hard) or `color_to_alpha` (soft) — this tool adds garment-aware
+        auto-technique + presets on top.
 
         Colour to remove, by priority: explicit `color` (name/#hex) > `shirt=`
         garment preset (see list_shirt_presets) > `sample_xy=[x,y]` eyedropper >
@@ -835,7 +839,10 @@ def register(mcp, ctx) -> None:
         match aggressiveness (default 0.15; a `shirt` preset supplies its own).
         Hard mode: `contiguous=True` removes only the edge-connected region (keeps
         design areas that reuse the bg colour); `feather` softens the cut.
-        `defringe` trims a 1px halo; `clean` crisps/denoises alpha for film.
+        `defringe` (default OFF) trims a 1px halo but ERODES the art edge — enable
+        only if you actually see a fringe. `clean` (default OFF) binarizes/denoises
+        the alpha for film but HARDENS soft/anti-aliased edges — enable for crisp
+        film output, leave off to preserve a clean subtract/feathered result.
 
         Returns the colour used, effective `mode` + `mode_basis`
         (`preset:<name>` | `luma` | `requested`), `content_bbox` as

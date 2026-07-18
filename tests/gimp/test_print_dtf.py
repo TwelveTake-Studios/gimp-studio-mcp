@@ -337,11 +337,13 @@ _result = {"id": img.get_id(), "lid": layer.get_id()}
 
 def test_knockout_feather_soft_edge(gimp, grp):
     # feather must survive `clean` (the binarize used to cancel it): a feathered
-    # hard knockout should leave a soft (partial-alpha) band at the design edge.
+    # hard knockout should leave a soft (partial-alpha) band at the design edge —
+    # assert it EVEN WITH clean=True (the regression this guards), now that clean is
+    # opt-in (default OFF as of 0.3.0).
     f = _mk_bg(gimp, 120, 90, (255, 255, 255), (30, 60, 210))
     try:
         r = grp._knockout_background(gimp, image=f["id"], shirt="white",
-                                     mode="hard", feather=3.0)
+                                     mode="hard", feather=3.0, clean=True)
         assert r["ok"], r["error"]
         partial = False
         for x in range(120):
@@ -430,15 +432,15 @@ def test_knockout_sample_xy_eyedropper(gimp, grp):
 
 
 def test_knockout_defringe_trims_one_px(gimp, grp):
-    # defringe (default on) erodes a 1px ring off the kept art; defringe=False keeps
-    # it. _BG_FIXTURE design rect for 120x90: rw=40, rx=(120-40)//2=40 -> the design's
-    # left-edge column is x=40; probe it with defringe on vs off.
+    # defringe is OPT-IN (default OFF as of 0.3.0): defringe=True erodes a 1px ring off
+    # the kept art; the default keeps it. _BG_FIXTURE design rect for 120x90: rw=40,
+    # rx=(120-40)//2=40 -> the design's left-edge column is x=40; probe defringe on vs off.
     rx, ey = 40, 45
     a = _mk_bg(gimp, 120, 90, (255, 255, 255), (30, 60, 210))
     b = _mk_bg(gimp, 120, 90, (255, 255, 255), (30, 60, 210))
     try:
-        ra = grp._knockout_background(gimp, image=a["id"], shirt="white")
-        rb = grp._knockout_background(gimp, image=b["id"], shirt="white", defringe=False)
+        ra = grp._knockout_background(gimp, image=a["id"], shirt="white", defringe=True)
+        rb = grp._knockout_background(gimp, image=b["id"], shirt="white")   # default: no defringe
         assert ra["ok"] and rb["ok"], (ra["error"], rb["error"])
         edge_on = _probe_pixel(gimp, a["layer_id"], rx, ey)["result"]["rgba"]
         edge_off = _probe_pixel(gimp, b["layer_id"], rx, ey)["result"]["rgba"]

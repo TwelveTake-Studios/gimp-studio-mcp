@@ -50,15 +50,50 @@ img = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, f)
 _result = {"image": img.get_id(), "width": img.get_width(), "height": img.get_height()}
 """
 
-# Export a FLATTENED COPY so the user's open image is never mutated.
+# Export a COPY so the user's open image is never mutated. ALPHA-SAFE: flatten()
+# composites onto the background and DROPS alpha (the DTF footgun — silently ruins a
+# transparent cutout), so we only flatten when the target format can't store alpha
+# (jpg/bmp) or the caller asks; otherwise merge_visible_layers keeps transparency.
 _EXPORT_CODE = """
+import os
 img = find_image(args.get("image"))
+path = args["path"]
+ext = os.path.splitext(path)[1].lstrip(".").lower()
+_ALPHA_FMTS = {"png", "tif", "tiff", "webp", "tga", "gif", "xcf", "ico"}
+fmt_alpha = ext in _ALPHA_FMTS
+req_flatten = args.get("flatten")            # None = auto; True/False = explicit override
+
 dup = img.duplicate()
-dup.flatten()
-f = Gio.File.new_for_path(args["path"])
+had_alpha = any(l.has_alpha() for l in dup.get_layers())
+if not fmt_alpha:
+    do_flatten = True                        # format can't store alpha -> must flatten to save safely
+elif req_flatten is None:
+    do_flatten = False                       # alpha-capable format, auto -> keep transparency
+else:
+    do_flatten = bool(req_flatten)           # explicit override on an alpha-capable format
+
+if do_flatten:
+    dup.flatten()
+else:
+    try:
+        dup.merge_visible_layers(Gimp.MergeType.CLIP_TO_IMAGE)
+    except Exception:
+        pass
+f = Gio.File.new_for_path(path)
 Gimp.file_save(Gimp.RunMode.NONINTERACTIVE, dup, f)
 dup.delete()
-_result = {"saved": args["path"], "image": img.get_id()}
+
+alpha_out = bool((not do_flatten) and had_alpha and fmt_alpha)
+dropped = bool(had_alpha and not alpha_out)
+_warn = None
+if dropped and do_flatten and req_flatten is True:
+    _warn = "alpha dropped: flatten=True on .%s" % (ext or "?")
+elif dropped:
+    _warn = ("alpha dropped: .%s can't store transparency — use png/tiff/webp to keep it"
+             % (ext or "?"))
+_result = {"saved": path, "image": img.get_id(), "format": ext,
+           "flattened": do_flatten, "alpha": alpha_out, "had_alpha": had_alpha,
+           "warning": _warn}
 """
 
 
@@ -76,8 +111,9 @@ def _open_image(ctx, path):
     return ctx.run(_OPEN_CODE, args={"path": path}, undo_group=False).to_dict()
 
 
-def _export_image(ctx, path, image=None):
-    return ctx.run(_EXPORT_CODE, args={"path": path, "image": image}, undo_group=False).to_dict()
+def _export_image(ctx, path, image=None, flatten=None):
+    return ctx.run(_EXPORT_CODE, args={"path": path, "image": image, "flatten": flatten},
+                   undo_group=False).to_dict()
 
 
 def register(mcp, ctx) -> None:
@@ -104,7 +140,16 @@ def register(mcp, ctx) -> None:
         return _open_image(ctx, path)
 
     @mcp.tool(name="export_image")
-    def export_image(path: str, image: int | str | None = None) -> dict:
-        """Export a FLATTENED COPY of an image to a file (format by extension:
-        png/jpg/tiff/...). The source image is not modified."""
-        return _export_image(ctx, path, image)
+    def export_image(path: str, image: int | str | None = None,
+                     flatten: bool | None = None) -> dict:
+        """Export an image to a file (format by extension: png/jpg/tiff/webp/...).
+        Works on a COPY — the source image is never modified.
+
+        ALPHA-SAFE: transparency is PRESERVED by default for formats that support it
+        (png/tiff/webp/tga/gif) and only flattened for formats that can't hold alpha
+        (jpg/bmp) — so a transparent cutout isn't silently ruined. `flatten=True`
+        forces a flattened opaque export; `flatten=False` forces keep-alpha (merge
+        visible, no flatten). For DTF PNGs prefer `export_dtf_png` (also tags DPI).
+        Returns {saved, format, flattened, alpha (kept in the file?), had_alpha,
+        warning (set when alpha had to be dropped)}."""
+        return _export_image(ctx, path, image, flatten)

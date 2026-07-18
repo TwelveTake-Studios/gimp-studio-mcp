@@ -12,7 +12,7 @@ A [TwelveTake Studios](https://twelvetake.com) project.
 
 A comprehensive **GIMP 3.x MCP server** that gives an AI agent full, reliable control of GIMP — with structured returns, real error capture, a GIMP-3 compatibility layer, safety checkpoints, and print/DTF-aware tooling.
 
-**117 tools across 13 groups**, each behaviorally tested against a real (headless) GIMP. Built for a working print shop's DTF (direct-to-film) pipeline, not as a thin API wrapper.
+**119 tools across 13 groups**, each behaviorally tested against a real (headless) GIMP. Built for a working print shop's DTF (direct-to-film) pipeline, not as a thin API wrapper.
 
 **Status:** v1 — feature-complete and verified on GIMP **3.0.4** and **3.2.4** (headless and live).
 
@@ -40,15 +40,15 @@ Live and headless differ only in **who launches GIMP**, not how we talk to it �
 
 Both speak one loopback-TCP, length-prefixed-JSON, token-authenticated protocol; pixel export works in both.
 
-## Capability areas (117 tools)
+## Capability areas (119 tools)
 
 | Group | Tools | What it covers |
 |-------|:-----:|----------------|
 | Session | 5 | health/status, open-image list, active-image switch, raw `gimp_exec`, namespace reset |
-| Document | 4 | new/open image, flatten, export |
+| Document | 4 | new/open image, metadata, alpha-safe export (preserves transparency) |
 | Layers | 18 | create/duplicate/delete/reorder/move, opacity, blend mode, groups, merge, content-offset + seam-check (tileable textures) |
-| Masks & Alpha | 8 | add/apply/remove masks, alpha add/lock, alpha↔selection, luminance→alpha |
-| Selections | 14 | rect/ellipse/by-color/fuzzy/from-path/from-alpha, grow/shrink/feather/border, invert, to-channel |
+| Masks & Alpha | 9 | add/apply/remove masks, alpha add/lock, alpha↔selection, luminance→alpha, color→alpha (soft) + **`cutout_color`** (crisp hard knockout) |
+| Selections | 15 | rect/ellipse/by-color/fuzzy/from-path/from-alpha, grow/shrink/feather/border, invert, to-channel, **`foreground_select`** (edge-aware subject/matting) |
 | Paint | 10 | pencil/paintbrush, bucket fill, gradient, stroke, fg/bg + brush + opacity context |
 | Text | 5 | create/edit text layers, props, outline, font check/substitute |
 | Color & Tone | 10 | brightness/contrast, levels, curves, hue/sat, color balance, desaturate, posterize, invert, threshold, normalize (auto stretch-contrast) |

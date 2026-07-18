@@ -18,13 +18,18 @@ if SRC not in sys.path:
 from gimp_mcp.tools import register_all  # noqa: E402
 
 EXPECTED_GROUPS = 13
-EXPECTED_TOOLS = 117  # bump deliberately when adding/removing tools
+EXPECTED_TOOLS = 119  # bump deliberately when adding/removing tools
 #                      114 = 113 + list_shirt_presets (garment-colour knockout feature)
 #                      117 = 114 + offset_content + seam_check + normalize (TTUpscale backlog)
-#                      With GIMP_MCP_NO_EXEC=1 the count is 116 (gimp_exec opted out).
+#                      118 = 117 + cutout_color (0.3.0 cutout-quality: crisp hard knockout)
+#                      119 = 118 + foreground_select (0.3.0: SIOX/matting subject extraction)
+#                      With GIMP_MCP_NO_EXEC=1 the count is 118 (gimp_exec opted out).
 
 # Tools added in the TTUpscale backlog pass — pin their presence so a rename/drop is loud.
 _TTUPSCALE_TOOLS = ("offset_content", "seam_check", "normalize")
+
+# 0.3.0 cutout-quality tools — pin presence so a rename/drop is loud.
+_CUTOUT_TOOLS = ("cutout_color", "foreground_select")
 
 
 class FakeMCP:
@@ -80,6 +85,13 @@ def test_ttupscale_tools_registered():
     mcp, _ = _register()
     missing = [t for t in _TTUPSCALE_TOOLS if t not in mcp.tools]
     assert not missing, f"missing TTUpscale-backlog tools: {missing}"
+
+
+def test_cutout_tools_registered():
+    """cutout_color (masks_alpha) must be present."""
+    mcp, _ = _register()
+    missing = [t for t in _CUTOUT_TOOLS if t not in mcp.tools]
+    assert not missing, f"missing cutout-quality tools: {missing}"
 
 
 def test_gimp_exec_opt_out(monkeypatch):

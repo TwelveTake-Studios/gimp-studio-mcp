@@ -33,6 +33,68 @@ def test_info_roundtrip(gimp):
     assert "mode" in info["result"]
 
 
+_ALPHA_BUILD = """
+img = Gimp.Image.new(20, 20, Gimp.ImageBaseType.RGB)
+layer = Gimp.Layer.new(img, "a", 20, 20, Gimp.ImageType.RGBA_IMAGE, 100.0, Gimp.LayerMode.NORMAL)
+img.insert_layer(layer, None, 0)
+layer.fill(Gimp.FillType.TRANSPARENT)
+img.select_rectangle(Gimp.ChannelOps.REPLACE, 5, 5, 10, 10)
+Gimp.context_push(); Gimp.context_set_foreground(compat.color("red"))
+layer.edit_fill(Gimp.FillType.FOREGROUND); Gimp.context_pop()
+Gimp.Selection.none(img)
+_result = {"image": img.get_id()}
+"""
+
+_PROBE_ACTIVE = """
+img = find_image(args["image"]); drw = find_drawable(args["image"], None)
+_result = {"px": [list(compat.read_pixel(drw, p[0], p[1])) for p in args["points"]]}
+"""
+
+
+def test_export_image_alpha_safe(gimp, load_group, tmp_path):
+    # export_image must NOT silently flatten away transparency (the DTF footgun).
+    doc = load_group("document")
+    r = gimp.run(_ALPHA_BUILD, undo_group=False).to_dict()
+    assert r["ok"], r["error"]
+    iid = r["result"]["image"]
+    ids = [iid]
+    try:
+        # PNG (auto): alpha preserved; transparent corner stays clear on reopen.
+        png = str(tmp_path / "a.png")
+        r = doc._export_image(gimp, png, iid)
+        assert r["ok"], r["error"]
+        assert r["result"]["flattened"] is False and r["result"]["alpha"] is True
+        assert r["result"]["warning"] is None, r["result"]
+        ro = doc._open_image(gimp, png)
+        assert ro["ok"], ro["error"]
+        oid = ro["result"]["image"]
+        ids.append(oid)
+        px = gimp.run(_PROBE_ACTIVE, args={"image": oid, "points": [[0, 0], [10, 10]]},
+                      undo_group=False).to_dict()
+        assert px["ok"], px["error"]
+        corner, center = px["result"]["px"]
+        assert corner[3] < 20, ("PNG export dropped alpha — corner not transparent", corner)
+        assert center[3] > 200 and center[0] > 150, ("red block missing after export", center)
+
+        # PNG flatten=True: forced opaque; warns that alpha was dropped.
+        pf = str(tmp_path / "b.png")
+        r = doc._export_image(gimp, pf, iid, flatten=True)
+        assert r["ok"], r["error"]
+        assert r["result"]["flattened"] is True and r["result"]["alpha"] is False
+        assert r["result"]["warning"], r["result"]
+
+        # JPG (auto): format can't hold alpha -> flattened + a helpful warning.
+        jpg = str(tmp_path / "c.jpg")
+        r = doc._export_image(gimp, jpg, iid)
+        assert r["ok"], r["error"]
+        assert r["result"]["flattened"] is True and r["result"]["alpha"] is False
+        assert r["result"]["warning"] and "png" in r["result"]["warning"].lower()
+    finally:
+        gimp.run("for i in args['ids']:\n img = Gimp.Image.get_by_id(i)\n"
+                 " (img.delete() if img else None)",
+                 args={"ids": ids}, undo_group=False)
+
+
 def test_document_new_metadata_export_open(gimp, load_group, tmp_path):
     doc = load_group("document")
     ids = []

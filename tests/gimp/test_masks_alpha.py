@@ -187,6 +187,112 @@ def test_color_to_alpha(gimp, grp, fx):
         % (before[0][3], after[0][3])
 
 
+def test_cutout_color(gimp, grp, fx):
+    # HARD crisp knockout: select the red and DELETE it -> red goes fully transparent,
+    # the blue rect is untouched. No defringe/clean -> WYSIWYG.
+    img, layer = fx["image"], fx["layer"]
+    r = grp._cutout_color(gimp, color="red", layer=layer, image=img)
+    assert r["ok"], r["error"]
+    res = r["result"]
+    assert res["cutout"] is True and res["cleared"] is True
+    assert res["color_hex"] == "#ff0000", res
+    assert isinstance(res["layer"], int) and isinstance(res["image"], int)
+    smp = _sample(gimp, img, layer, [[10, 10], [45, 10]])   # red rect, blue rect
+    assert smp[0][3] < 40, ("red not cut out (should be crisp/transparent)", smp[0])
+    assert smp[1][3] > 200, ("blue rect must survive an unrelated-colour cutout", smp[1])
+
+
+def test_cutout_color_sample_xy(gimp, grp, fx):
+    # Eyedropper form: sample the colour from a red pixel, cut it out.
+    img, layer = fx["image"], fx["layer"]
+    r = grp._cutout_color(gimp, sample_xy=[10, 10], layer=layer, image=img)
+    assert r["ok"], r["error"]
+    assert r["result"]["color_hex"] == "#ff0000", r["result"]
+    smp = _sample(gimp, img, layer, [[10, 10], [45, 10]])
+    assert smp[0][3] < 40, ("sampled red not cut out", smp[0])
+    assert smp[1][3] > 200, ("blue must survive", smp[1])
+
+
+def test_cutout_color_needs_target(gimp, grp, fx):
+    # With neither `color` nor `sample_xy`, cutout_color must fail loudly (not guess).
+    r = grp._cutout_color(gimp, layer=fx["layer"], image=fx["image"])
+    assert r["ok"] is False, r
+    assert "cutout_color needs" in str(r.get("error")), r.get("error")
+
+
+# Dedicated fixtures for the contiguous paths (the shared fx has a transparent hole,
+# not a clean edge-connected bg).
+_CONTIG_INTERIOR_CODE = """
+img = Gimp.Image.new(100, 80, Gimp.ImageBaseType.RGB)
+layer = Gimp.Layer.new(img, "a", 100, 80, Gimp.ImageType.RGBA_IMAGE, 100.0, Gimp.LayerMode.NORMAL)
+img.insert_layer(layer, None, 0)
+Gimp.Selection.none(img)
+Gimp.context_push()
+Gimp.context_set_foreground(compat.color((255, 255, 255))); layer.edit_fill(Gimp.FillType.FOREGROUND)
+img.select_rectangle(Gimp.ChannelOps.REPLACE, 30, 20, 40, 40)
+Gimp.context_set_foreground(compat.color((30, 60, 210))); layer.edit_fill(Gimp.FillType.FOREGROUND)
+img.select_rectangle(Gimp.ChannelOps.REPLACE, 45, 35, 10, 10)
+Gimp.context_set_foreground(compat.color((255, 255, 255))); layer.edit_fill(Gimp.FillType.FOREGROUND)
+Gimp.context_pop(); Gimp.Selection.none(img)
+_result = {"image": img.get_id(), "layer": layer.get_id()}
+"""
+
+_CONTIG_CENTRE_CODE = """
+img = Gimp.Image.new(100, 80, Gimp.ImageBaseType.RGB)
+layer = Gimp.Layer.new(img, "a", 100, 80, Gimp.ImageType.RGBA_IMAGE, 100.0, Gimp.LayerMode.NORMAL)
+img.insert_layer(layer, None, 0)
+Gimp.Selection.none(img)
+Gimp.context_push()
+Gimp.context_set_foreground(compat.color((255, 255, 255))); layer.edit_fill(Gimp.FillType.FOREGROUND)
+img.select_rectangle(Gimp.ChannelOps.REPLACE, 40, 30, 20, 20)
+Gimp.context_set_foreground(compat.color((220, 20, 20))); layer.edit_fill(Gimp.FillType.FOREGROUND)
+Gimp.context_pop(); Gimp.Selection.none(img)
+_result = {"image": img.get_id(), "layer": layer.get_id()}
+"""
+
+
+def _del(gimp, iid):
+    gimp.run("img = Gimp.Image.get_by_id(args['i'])\nimg.delete() if img else None",
+             args={"i": iid}, undo_group=False)
+
+
+def test_cutout_color_contiguous_preserves_interior(gimp, grp):
+    # White bg, blue centre block, WHITE spot inside the blue. contiguous=True clears
+    # only the edge-connected outer white; the interior white survives.
+    f = gimp.run(_CONTIG_INTERIOR_CODE, undo_group=False).to_dict()
+    assert f["ok"], f["error"]
+    iid, lid = f["result"]["image"], f["result"]["layer"]
+    try:
+        r = grp._cutout_color(gimp, color="white", contiguous=True, image=iid, layer=lid)
+        assert r["ok"], r["error"]
+        assert r["result"]["contiguous"] is True, r["result"]
+        smp = _sample(gimp, iid, lid, [[1, 1], [50, 40]])   # outer white, interior white
+        assert smp[0][3] < 40, ("outer white not cleared", smp[0])
+        assert smp[1][3] > 200 and min(smp[1][:3]) > 200, \
+            ("interior white not preserved by contiguous", smp[1])
+    finally:
+        _del(gimp, iid)
+
+
+def test_cutout_color_contiguous_color_not_at_corner_falls_back(gimp, grp):
+    # Regression guard for the missing distance check: contiguous=True but the target
+    # colour is NOT at any corner must NOT flood the corner's colour. It falls back to a
+    # GLOBAL colour select of the target and honestly reports contiguous=False.
+    f = gimp.run(_CONTIG_CENTRE_CODE, undo_group=False).to_dict()
+    assert f["ok"], f["error"]
+    iid, lid = f["result"]["image"], f["result"]["layer"]
+    try:
+        r = grp._cutout_color(gimp, color=(220, 20, 20), contiguous=True, image=iid, layer=lid)
+        assert r["ok"], r["error"]
+        assert r["result"]["contiguous"] is False, \
+            ("no red corner -> must fall back to global, not flood the white corner", r["result"])
+        smp = _sample(gimp, iid, lid, [[50, 40], [1, 1]])   # red centre, white corner
+        assert smp[0][3] < 40, ("red centre not cleared (global fallback failed)", smp[0])
+        assert smp[1][3] > 200, ("white corner must NOT be cleared", smp[1])
+    finally:
+        _del(gimp, iid)
+
+
 def test_luminance_to_alpha(gimp, grp, fx):
     # default: bright -> opaque, dark -> transparent (white-art-on-black).
     img, layer = fx["image"], fx["layer"]

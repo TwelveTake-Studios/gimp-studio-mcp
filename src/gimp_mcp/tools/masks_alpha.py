@@ -10,7 +10,8 @@ Tools:
   - remove_mask          [destructive]  (discard the layer mask)
   - add_alpha, lock_alpha
   - luminance_to_alpha   [destructive]  (luminance -> transparency, e.g. white-on-black)
-  - color_to_alpha       [destructive]  (knockout; gegl:color-to-alpha, no plug-in)
+  - color_to_alpha       [destructive]  (SOFT knockout; gegl:color-to-alpha, graded alpha)
+  - cutout_color         [destructive]  (HARD knockout; select-by-colour + delete, crisp edge)
   - threshold_alpha      [destructive]  (binarize alpha for a clean print edge)
 """
 from __future__ import annotations
@@ -159,11 +160,100 @@ img = find_image(args.get("image"))
 drawable = find_drawable(args.get("image"), args.get("layer"))
 compat.color_to_alpha(
     img, drawable, target=args.get("color", "white"),
-    transparency_threshold=float(args.get("transparency_threshold", 0.0)),
+    transparency_threshold=float(args.get("transparency_threshold", 0.15)),
     opacity_threshold=float(args.get("opacity_threshold", 1.0)),
 )
 _result = {"image": img.get_id(), "layer": drawable.get_id(),
            "color": args.get("color", "white")}
+"""
+
+# cutout_color: the CRISP, predictable HARD knockout — select a target colour and
+# delete it to transparency. The hard counterpart to color_to_alpha's soft subtract,
+# and the tool equivalent of the by-hand "add alpha -> select by colour -> delete".
+# Deliberately WYSIWYG: NO auto technique-picking, NO defringe (edge erosion), NO
+# alpha-clean. Just select + clear. Colour from explicit `color` or a `sample_xy`
+# eyedropper; `contiguous` limits to the edge-connected region (keeps interior
+# pixels that reuse the colour); `antialias`/`feather` shape the cut edge.
+_CUTOUT_COLOR_CODE = """
+img = find_image(args.get("image"))
+drawable = find_drawable(args.get("image"), args.get("layer"))
+compat.ensure_alpha(drawable)
+
+W = drawable.get_width(); H = drawable.get_height()
+_ox, _oy = compat.layer_offsets(drawable)   # GIMP 3.x (success, x, y) quirk owned by compat
+ox = int(_ox); oy = int(_oy)
+
+thr = float(args.get("threshold") if args.get("threshold") is not None else 0.15)
+contiguous = bool(args.get("contiguous"))
+_aa = args.get("antialias"); antialias = True if _aa is None else bool(_aa)
+feather = float(args.get("feather") or 0.0)
+
+# Resolve the colour to remove: explicit `color`, else a `sample_xy` eyedropper.
+# (if/elif like the knockout reference — an explicit colour does NOT seed the flood
+# from sample_xy, so contiguous keys off the target colour, not a stray pixel.)
+explicit = args.get("color")
+sample_xy = args.get("sample_xy")
+if sample_xy is not None and len(sample_xy) < 2:
+    raise ValueError("sample_xy must be [x, y] (got %r)" % (sample_xy,))
+seed = None
+if explicit is not None:
+    target = list(compat.rgba(compat.color(explicit)))
+elif sample_xy:
+    sx = max(0, min(W - 1, int(sample_xy[0]))); sy = max(0, min(H - 1, int(sample_xy[1])))
+    target = list(compat.read_pixel(drawable, sx, sy)); seed = (sx + ox, sy + oy)
+else:
+    raise ValueError("cutout_color needs `color` (name/#hex/rgb) or `sample_xy` [x, y]")
+
+gcol = compat.color((target[0], target[1], target[2], 255))   # force 255-scale
+
+# Contiguous needs a seed point; if none was supplied (explicit colour), seed from the
+# nearest-matching corner — but ONLY if a corner actually matches the target within
+# tolerance (else leave seed=None so the hard branch does a GLOBAL colour select of the
+# correct target, rather than flooding whatever colour happens to sit in the corner).
+if contiguous and seed is None:
+    _bestd = 10 ** 9; _bp = None
+    for (px, py) in [(0, 0), (W - 1, 0), (0, H - 1), (W - 1, H - 1)]:
+        c = compat.read_pixel(drawable, px, py)
+        d = abs(c[0] - target[0]) + abs(c[1] - target[1]) + abs(c[2] - target[2])
+        if d < _bestd:
+            _bestd = d; _bp = (px, py)
+    if _bp is not None and _bestd <= 765.0 * thr + 12:
+        seed = (_bp[0] + ox, _bp[1] + oy)
+
+Gimp.context_push()
+try:
+    Gimp.context_set_sample_threshold(thr)
+    try: Gimp.context_set_antialias(antialias)
+    except Exception: pass
+    try: Gimp.context_set_sample_merged(False)
+    except Exception: pass
+    if contiguous and seed is not None:
+        img.select_contiguous_color(Gimp.ChannelOps.REPLACE, drawable,
+                                    float(seed[0]), float(seed[1]))
+    else:
+        img.select_color(Gimp.ChannelOps.REPLACE, drawable, gcol)
+    if feather > 0:
+        try: Gimp.Selection.feather(img, feather)
+        except Exception: pass
+    cleared = bool(compat.selection_bbox(img)[0])
+    if cleared:
+        drawable.edit_clear()
+    Gimp.Selection.none(img)
+finally:
+    Gimp.context_pop()
+
+img.select_item(Gimp.ChannelOps.REPLACE, drawable)   # remaining opaque content
+_bb = compat.selection_bbox(img)
+Gimp.Selection.none(img)
+_result = {"cutout": True, "cleared": cleared,
+           "color": [int(target[0]), int(target[1]), int(target[2])],
+           "color_hex": "#%02x%02x%02x" % (int(target[0]), int(target[1]), int(target[2])),
+           "threshold": thr,
+           "contiguous": bool(contiguous and seed is not None),
+           "antialias": bool(antialias), "feather": feather,
+           "content_bbox": ([int(_bb[1]), int(_bb[2]), int(_bb[3]), int(_bb[4])]
+                            if _bb[0] else None),
+           "layer": drawable.get_id(), "image": img.get_id()}
 """
 
 # threshold_alpha: binarize the alpha channel at a cutoff (alpha < value -> 0,
@@ -232,11 +322,21 @@ def _luminance_to_alpha(ctx, layer=None, invert=False, image=None):
 
 
 def _color_to_alpha(ctx, color="white", layer=None,
-                    transparency_threshold=0.0, opacity_threshold=1.0, image=None):
+                    transparency_threshold=0.15, opacity_threshold=1.0, image=None):
     return ctx.run(_COLOR_TO_ALPHA_CODE,
                    args={"image": image, "layer": layer, "color": color,
                          "transparency_threshold": transparency_threshold,
                          "opacity_threshold": opacity_threshold},
+                   image=image, undo_group=True).to_dict()
+
+
+def _cutout_color(ctx, color=None, sample_xy=None, threshold=0.15, contiguous=False,
+                  antialias=True, feather=0.0, layer=None, image=None):
+    return ctx.run(_CUTOUT_COLOR_CODE,
+                   args={"image": image, "layer": layer, "color": color,
+                         "sample_xy": list(sample_xy) if sample_xy else None,
+                         "threshold": threshold, "contiguous": contiguous,
+                         "antialias": antialias, "feather": feather},
                    image=image, undo_group=True).to_dict()
 
 
@@ -296,12 +396,44 @@ def register(mcp, ctx) -> None:
 
     @mcp.tool(name="color_to_alpha")
     def color_to_alpha(color: str = "white", layer: int | str | None = None,
-                       transparency_threshold: float = 0.0,
+                       transparency_threshold: float = 0.15,
                        opacity_threshold: float = 1.0,
                        image: int | str | None = None) -> dict:
-        """Knock out a color to transparency (destructive). color: name/#rrggbb."""
+        """SOFT knockout: remove a color to transparency with graded alpha
+        (destructive; gegl:color-to-alpha). color: name/#rrggbb. The colour is
+        subtracted from every pixel that contains it, so edges and matching interior
+        tones fade smoothly — great for feathered/anti-aliased backgrounds (e.g. a
+        clean black knockout from #000000 at threshold ~0.15-0.20). Higher
+        `transparency_threshold` (0-1) removes a wider band of near-target colours;
+        `opacity_threshold` (0-1) sets where fully-opaque begins. For a CRISP,
+        hard-edged cut (select-by-colour + delete, no fade) use `cutout_color`."""
         return _color_to_alpha(ctx, color, layer,
                                transparency_threshold, opacity_threshold, image)
+
+    @mcp.tool(name="cutout_color")
+    def cutout_color(color: str | list | tuple | None = None,
+                     sample_xy: list[int] | None = None,
+                     threshold: float = 0.15,
+                     contiguous: bool = False,
+                     antialias: bool = True,
+                     feather: float = 0.0,
+                     layer: int | str | None = None,
+                     image: int | str | None = None) -> dict:
+        """HARD knockout: select a colour and DELETE it to transparency — the crisp,
+        predictable cutout (the tool form of by-hand 'add alpha -> select by colour ->
+        delete'). Auto-adds alpha. WYSIWYG: no auto-mode, no defringe, no alpha-clean.
+
+        Colour to remove: explicit `color` (name/#hex/rgb) OR a `sample_xy=[x,y]`
+        eyedropper (one is required). `threshold` (0-1, default 0.15) = colour-match
+        tolerance. `contiguous=True` removes only the edge-connected region (keeps
+        interior areas that reuse the colour); seeds from `sample_xy` if given, else
+        the nearest-matching corner. `antialias` (default on) smooths the cut edge;
+        `feather` softens it further. For a soft/graded knockout use `color_to_alpha`.
+
+        Returns the colour used, `cleared`, `content_bbox` as `[x1,y1,x2,y2]` (or null),
+        and canonical `layer`/`image` ids."""
+        return _cutout_color(ctx, color, sample_xy, threshold, contiguous,
+                             antialias, feather, layer, image)
 
     @mcp.tool(name="threshold_alpha")
     def threshold_alpha(value: float = 0.5, layer: int | str | None = None,
