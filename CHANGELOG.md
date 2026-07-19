@@ -6,6 +6,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-19
+
+Honesty release: tools that can never do what they advertise now say so in `ok`,
+and the docs stop selling a capability GIMP 3.x does not expose. No tool added or
+removed — the surface stays at 119.
+
+### Fixed
+- **`undo` / `redo` no longer report success when nothing was rolled back.** GIMP
+  3.x has no `gimp-image-undo` / `gimp-image-redo` in its PDB — undo is driven by
+  the interactive GUI stack — so both tools always took their unsupported branch
+  and still returned `ok: true`. A caller that checks only `ok` read that as a
+  real rollback. They now return `ok: false` with an
+  `error.type` of `UnsupportedOperation` pointing at `checkpoint()` / `restore()`,
+  which are the working rollback primitives. The `{supported, note}` result is
+  preserved, and if a future GIMP ever exposes the procs the tools succeed normally.
+- **`soft_proof` / `list_profiles` likewise return `ok: false`.** Both are permanent
+  capability gaps (soft-proofing is a VIEW-only display simulation in GIMP 3.x;
+  libgimp cannot enumerate installed ICC profiles), and both reported `ok: true`
+  while doing nothing. Their errors name the alternative that does work —
+  `convert_profile` to bake a conversion, explicit `.icc` paths for profile
+  assignment, `get_profile` to read an image's own profile.
+
+### Changed
+- Docstrings for the four tools above now state plainly that the operation always
+  fails on GIMP 3.x and what to use instead, rather than hedging with "it may not".
+
+### Documentation
+- README no longer advertises **soft-proof** under Color Management, nor
+  **undo/redo** under Safety — neither can be scripted in GIMP 3.x, so listing them
+  as capabilities was misleading. The Safety row now names `checkpoint`/`restore`
+  as the scriptable rollback path.
+- README tool-count fixes: the shields badge said 117 (now 119, matching the prose),
+  and the `GIMP_MCP_NO_EXEC=1` note said "116 structured tools" (now 118 — stale
+  117-era arithmetic).
+
 ## [0.3.0] - 2026-07-18
 
 Cutout-quality + export-safety release. Tool surface 117 → 119.
@@ -147,7 +182,8 @@ bridge, verified against real GIMP **3.0.4** and **3.2.4**.
   over stdio) and scrubs `PYTHONPATH` / `PYTHONHOME` so the external venv never
   leaks into GIMP's Python.
 
-[Unreleased]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.1.0...v0.1.1

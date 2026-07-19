@@ -19,6 +19,8 @@ globals()["_gimpmcp_scratch"].
 """
 from __future__ import annotations
 
+from gimp_mcp.bridge.protocol import unsupported_response
+
 # checkpoint: duplicate the target image; stash the dup's id under a fresh int
 # cid in the persistent checkpoint map AND in the scratch set. A duplicate is a
 # real, independent snapshot (it also opens a hidden image in live mode — fine
@@ -211,14 +213,27 @@ def _undo_group_end(ctx, image=None):
                    undo_group=False).to_dict()
 
 
+# Two paths reach supported:False here — the PDB proc is absent (every GIMP 3.x),
+# or it exists but raised. The message must be true of BOTH, so it states the
+# OUTCOME rather than diagnosing a cause; `result.note`/`result.error` carry the
+# specifics.
+_UNDO_UNSUPPORTED_MSG = (
+    "No scriptable {op} is available on this GIMP — undo is driven by the "
+    "interactive GUI stack — so NOTHING was rolled back. Use checkpoint() "
+    "before risky edits and restore() to roll back."
+)
+
+
 def _undo(ctx, image=None):
-    return ctx.run(_UNDO_CODE, args={"image": image, "op": "undo"},
-                   undo_group=False).to_dict()
+    env = ctx.run(_UNDO_CODE, args={"image": image, "op": "undo"},
+                  undo_group=False).to_dict()
+    return unsupported_response(env, _UNDO_UNSUPPORTED_MSG.format(op="undo"))
 
 
 def _redo(ctx, image=None):
-    return ctx.run(_UNDO_CODE, args={"image": image, "op": "redo"},
-                   undo_group=False).to_dict()
+    env = ctx.run(_UNDO_CODE, args={"image": image, "op": "redo"},
+                  undo_group=False).to_dict()
+    return unsupported_response(env, _UNDO_UNSUPPORTED_MSG.format(op="redo"))
 
 
 def register(mcp, ctx) -> None:
@@ -254,12 +269,14 @@ def register(mcp, ctx) -> None:
 
     @mcp.tool(name="undo")
     def undo(image: int | str | None = None) -> dict:
-        """Undo the last operation on an image, if GIMP exposes scriptable undo
-        (it may not — undo is interactive). Prefer checkpoints for reliable rollback."""
+        """Undo the last operation — only if GIMP exposes scriptable undo, which
+        GIMP 3.x does NOT (undo is interactive), so this returns ok=false with
+        {supported: false} and rolls nothing back. Use checkpoint()/restore()."""
         return _undo(ctx, image)
 
     @mcp.tool(name="redo")
     def redo(image: int | str | None = None) -> dict:
-        """Redo the last undone operation on an image, if scriptable redo is
-        available (it may not be). Prefer checkpoints for reliable rollback."""
+        """Redo the last undone operation — only if GIMP exposes scriptable redo,
+        which GIMP 3.x does NOT, so this returns ok=false with {supported: false}
+        and redoes nothing. Use checkpoint()/restore() for reliable rollback."""
         return _redo(ctx, image)

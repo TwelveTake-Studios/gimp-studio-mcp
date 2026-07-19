@@ -123,9 +123,12 @@ def test_convert_profile(gimp, grp, fx, srgb_icc):
 
 
 def test_soft_proof(gimp, grp, fx, srgb_icc):
-    # Soft-proof is a GIMP-3.0 VIEW-only setting → graceful unsupported, not pixels.
+    # Soft-proof is a VIEW-only setting in GIMP 3.x → it can NEVER change pixels,
+    # so the envelope must say ok=false; ok=true would read as a real proof.
     r = grp._soft_proof(gimp, srgb_icc, "perceptual", fx["image"])
-    assert r["ok"], r["error"]
+    assert r["ok"] is False
+    assert r["error"]["type"] == "UnsupportedOperation"
+    assert "convert_profile" in r["error"]["message"]
     res = r["result"]
     assert res["image"] == fx["image"]
     assert res["supported"] is False
@@ -135,9 +138,12 @@ def test_soft_proof(gimp, grp, fx, srgb_icc):
 
 
 def test_list_profiles(gimp, grp):
-    # The libgimp API cannot enumerate installed profiles → graceful unsupported.
+    # The libgimp API cannot enumerate installed profiles → never works, so the
+    # envelope must say ok=false and point at the path-based alternative.
     r = grp._list_profiles(gimp)
-    assert r["ok"], r["error"]
+    assert r["ok"] is False
+    assert r["error"]["type"] == "UnsupportedOperation"
+    assert "assign_profile" in r["error"]["message"]
     res = r["result"]
     assert res["supported"] is False
     assert isinstance(res["note"], str) and res["note"]

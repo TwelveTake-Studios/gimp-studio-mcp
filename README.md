@@ -5,7 +5,7 @@ A [TwelveTake Studios](https://twelvetake.com) project.
 [![PyPI](https://img.shields.io/pypi/v/twelvetake-gimp-studio-mcp)](https://pypi.org/project/twelvetake-gimp-studio-mcp/)
 [![CI](https://github.com/TwelveTake-Studios/gimp-studio-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/TwelveTake-Studios/gimp-studio-mcp/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/pypi/pyversions/twelvetake-gimp-studio-mcp)](https://pypi.org/project/twelvetake-gimp-studio-mcp/)
-[![Tools](https://img.shields.io/badge/tools-117-blue)](https://github.com/TwelveTake-Studios/gimp-studio-mcp)
+[![Tools](https://img.shields.io/badge/tools-119-blue)](https://github.com/TwelveTake-Studios/gimp-studio-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow)](https://buymeacoffee.com/twelvetake)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-support-ff5e5b)](https://ko-fi.com/twelvetake)
@@ -54,9 +54,9 @@ Both speak one loopback-TCP, length-prefixed-JSON, token-authenticated protocol;
 | Color & Tone | 10 | brightness/contrast, levels, curves, hue/sat, color balance, desaturate, posterize, invert, threshold, normalize (auto stretch-contrast) |
 | Filters & Effects | 4 | gaussian blur, unsharp mask, drop shadow, generic GEGL `apply_filter` |
 | Print / DTF | 13 | white underbase, edge choke/spread, trim-to-content, **knockout_background** (garment-aware), clean-for-DTF, halftone separation, gang sheet (22″@300), DTF PNG export, geometry/bleed |
-| Color Management | 7 | assign/convert ICC profiles, soft-proof, grayscale/RGB conversion, profile inspect |
+| Color Management | 7 | assign/convert ICC profiles, grayscale/RGB conversion, profile inspect |
 | Analysis | 12 | **`get_bitmap`** (viewable preview), histogram (perceptual, matches `levels`), color-at, region read, metadata, op describe, GEGL/procedure listing |
-| Safety | 7 | checkpoint/restore, undo/redo, undo groups, list checkpoints |
+| Safety | 7 | checkpoint/restore (scriptable rollback), undo groups, list checkpoints |
 
 Tools are self-describing through your MCP client; `describe_op` and `list_*` tools enumerate ops and resources at runtime.
 
@@ -138,7 +138,7 @@ This server runs on the **same trust boundary as the local user**. Installing it
 
 - **Loopback only + token.** The bridge listens on `127.0.0.1` with an ephemeral port and a per-session token. It is not exposed to the network.
 - **`gimp_exec` is arbitrary host code execution by design.** A malicious or prompt-injected instruction (for example, hidden in an image you ask the agent to open) could reach `gimp_exec`. Only attach trusted agents and trusted content.
-- **Disable switch.** Set `GIMP_MCP_NO_EXEC=1` to skip registering `gimp_exec` entirely; the other 116 structured tools still work.
+- **Disable switch.** Set `GIMP_MCP_NO_EXEC=1` to skip registering `gimp_exec` entirely; the other 118 structured tools still work.
 
 See [SECURITY.md](SECURITY.md) for the full threat model and reporting instructions.
 

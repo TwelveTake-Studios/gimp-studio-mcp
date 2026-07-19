@@ -155,6 +155,30 @@ def error_response(etype: str, message: str, failing_line: str | None = None,
                           error=BridgeError(etype, message, failing_line, tb)).to_dict()
 
 
+def unsupported_response(env: dict, message: str) -> dict:
+    """Demote an envelope whose result reports ``supported: False`` to ``ok: false``.
+
+    A tool that cannot perform its ADVERTISED operation on this GIMP must not
+    report ``ok: true`` — a caller that only checks ``ok`` reads that as success
+    and moves on believing the edit landed. The ``supported``/``note`` result is
+    preserved so callers can still introspect why, and ``error.message`` names
+    the working alternative.
+
+    Only for capability gaps (the op can never run here). Tools that legitimately
+    return ``supported: False`` as an INPUT-conditional outcome — the op ran and
+    correctly reported a condition — keep ``ok: true`` and must not use this.
+    """
+    if not env.get("ok"):
+        return env
+    result = env.get("result")
+    if not isinstance(result, dict) or result.get("supported") is not False:
+        return env
+    demoted = dict(env)
+    demoted["ok"] = False
+    demoted["error"] = BridgeError("UnsupportedOperation", message).to_dict()
+    return demoted
+
+
 # ---------------------------------------------------------------------------
 # Framing  (4-byte big-endian length prefix + UTF-8 JSON)
 # ---------------------------------------------------------------------------

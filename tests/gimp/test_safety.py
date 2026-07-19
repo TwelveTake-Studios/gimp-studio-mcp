@@ -175,24 +175,30 @@ def test_undo_group_begin_end(gimp, grp, fx):
     assert e["result"]["undo_group"] == "end"
 
 
-def test_undo(gimp, grp, fx):
-    """undo() never raises; it honestly reports scriptable-undo support."""
-    r = grp._undo(gimp, fx["image"])
-    assert r["ok"], r["error"]
+def _assert_undo_shape(r, op, image):
+    """undo/redo never raise. GIMP 3.x has no scriptable undo, so the honest
+    answer is ok=false + supported=false -- ok=true would read as a real
+    rollback to a caller that only checks ok. If a future GIMP ever grows the
+    PDB procs, supported=true and ok=true is equally valid."""
     res = r["result"]
-    assert res["op"] == "undo"
-    assert res["image"] == fx["image"]
+    assert res["op"] == op
+    assert res["image"] == image
     assert isinstance(res["supported"], bool)
+    if res["supported"]:
+        assert r["ok"], r["error"]
+    else:
+        assert r["ok"] is False
+        assert r["error"]["type"] == "UnsupportedOperation"
+        # The error must steer the caller at the thing that DOES work.
+        assert "checkpoint" in r["error"]["message"].lower()
+
+
+def test_undo(gimp, grp, fx):
+    _assert_undo_shape(grp._undo(gimp, fx["image"]), "undo", fx["image"])
 
 
 def test_redo(gimp, grp, fx):
-    """redo() never raises; it honestly reports scriptable-redo support."""
-    r = grp._redo(gimp, fx["image"])
-    assert r["ok"], r["error"]
-    res = r["result"]
-    assert res["op"] == "redo"
-    assert res["image"] == fx["image"]
-    assert isinstance(res["supported"], bool)
+    _assert_undo_shape(grp._redo(gimp, fx["image"]), "redo", fx["image"])
 
 
 def _new_image(gimp):

@@ -392,3 +392,46 @@ def test_gimp_user_dir_highest_version_when_no_endpoint(monkeypatch, tmp_path):
     (base / "3.2").mkdir(parents=True)
     monkeypatch.setattr(P, "_gimp_config_base", lambda: str(base))
     assert os.path.basename(P.gimp_user_dir()) == "3.2"
+
+
+# ---------------------------------------------------------------------------
+# unsupported_response — capability gaps must not report ok:true
+# ---------------------------------------------------------------------------
+def _ok_env(result):
+    return P.ok_response(result=result, stdout="out", warnings=["w"])
+
+
+def test_unsupported_response_demotes_supported_false():
+    env = P.unsupported_response(_ok_env({"supported": False, "note": "n"}), "use X")
+    assert env["ok"] is False
+    assert env["error"]["type"] == "UnsupportedOperation"
+    assert env["error"]["message"] == "use X"
+    # The result is PRESERVED so callers can still introspect why it failed,
+    # and stdout/warnings survive the demotion (envelope contract).
+    assert env["result"] == {"supported": False, "note": "n"}
+    assert env["stdout"] == "out"
+    assert env["warnings"] == ["w"]
+
+
+def test_unsupported_response_passes_through_supported_true():
+    env = P.unsupported_response(_ok_env({"supported": True, "op": "undo"}), "use X")
+    assert env["ok"] is True
+    assert env["error"] is None
+
+
+@pytest.mark.parametrize("result", [None, "text", 42, [], {}, {"supported": None}])
+def test_unsupported_response_ignores_non_capability_results(result):
+    """Only an explicit supported=False is a capability gap. Notably a missing
+    or None `supported` key must NOT be demoted."""
+    assert P.unsupported_response(_ok_env(result), "use X")["ok"] is True
+
+
+def test_unsupported_response_leaves_real_errors_untouched():
+    err = P.error_response("ValueError", "boom")
+    assert P.unsupported_response(err, "use X") == err
+
+
+def test_unsupported_response_does_not_mutate_input():
+    original = _ok_env({"supported": False})
+    P.unsupported_response(original, "use X")
+    assert original["ok"] is True and original["error"] is None

@@ -16,6 +16,8 @@ Tools:
 """
 from __future__ import annotations
 
+from gimp_mcp.bridge.protocol import unsupported_response
+
 # Read-only: report the embedded ICC profile label (or None for built-in sRGB).
 _GET_PROFILE_CODE = """
 img = find_image(args.get("image"))
@@ -133,9 +135,15 @@ def _convert_profile(ctx, icc_path, intent="perceptual", bpc=True, image=None):
 
 
 def _soft_proof(ctx, icc_path=None, intent="perceptual", image=None):
-    return ctx.run(_SOFT_PROOF_CODE,
-                   args={"image": image, "icc_path": icc_path, "intent": intent},
-                   undo_group=False).to_dict()
+    env = ctx.run(_SOFT_PROOF_CODE,
+                  args={"image": image, "icc_path": icc_path, "intent": intent},
+                  undo_group=False).to_dict()
+    return unsupported_response(
+        env,
+        "Soft-proofing is a VIEW-only display simulation in GIMP 3.x and cannot "
+        "be scripted — no pixels were changed. Use convert_profile to bake the "
+        "conversion into the pixels, or proof externally.",
+    )
 
 
 def _to_grayscale(ctx, image=None):
@@ -149,7 +157,13 @@ def _to_rgb(ctx, image=None):
 
 
 def _list_profiles(ctx):
-    return ctx.run(_LIST_PROFILES_CODE, args={}, undo_group=False).to_dict()
+    env = ctx.run(_LIST_PROFILES_CODE, args={}, undo_group=False).to_dict()
+    return unsupported_response(
+        env,
+        "The libgimp 3.x API does not enumerate installed ICC profiles. Pass an "
+        "explicit .icc/.icm path to assign_profile or convert_profile instead; "
+        "get_profile reads the profile an image already carries.",
+    )
 
 
 def register(mcp, ctx) -> None:
@@ -177,9 +191,10 @@ def register(mcp, ctx) -> None:
     @mcp.tool(name="soft_proof")
     def soft_proof(icc_path: str | None = None, intent: str = "perceptual",
                   image: int | str | None = None) -> dict:
-        """NOT SUPPORTED as pixels: soft-proofing is a GIMP 3.0 VIEW-only display
-        simulation, not scriptable. Returns {supported: false, note}. Use
-        convert_profile to bake a conversion instead."""
+        """NOT SUPPORTED: soft-proofing is a VIEW-only display simulation in GIMP
+        3.x, not a scriptable pixel operation — this ALWAYS fails. Returns
+        ok=false with {supported: false, note}; no pixels are changed. Use
+        convert_profile to bake the conversion instead."""
         return _soft_proof(ctx, icc_path, intent, image)
 
     @mcp.tool(name="to_grayscale")
@@ -194,6 +209,7 @@ def register(mcp, ctx) -> None:
 
     @mcp.tool(name="list_profiles")
     def list_profiles() -> dict:
-        """NOT SUPPORTED: the libgimp API cannot enumerate installed ICC profiles.
-        Returns {supported: false, note}. Pass explicit .icc paths instead."""
+        """NOT SUPPORTED: the libgimp API cannot enumerate installed ICC profiles —
+        this ALWAYS fails. Returns ok=false with {supported: false, note}. Pass
+        explicit .icc paths instead; get_profile reads an image's own profile."""
         return _list_profiles(ctx)

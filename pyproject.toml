@@ -14,7 +14,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "twelvetake-gimp-studio-mcp"
-version = "0.3.0"
+version = "0.3.1"
 description = "A GIMP 3.x MCP server with structured returns, a compat layer, safety checkpoints, and print/DTF tooling."
 readme = "README.md"
 requires-python = ">=3.10"
