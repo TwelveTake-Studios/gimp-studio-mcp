@@ -272,13 +272,23 @@ if fail:
                "layer": drawable.get_id(), "image": img.get_id()}
 else:
     gcol = compat.color((target[0], target[1], target[2], 255))  # force 255-scale
-    # Contiguous needs a seed. Auto-detect / sample_xy set one; for an explicit or
-    # preset colour, find the closest-matching border pixel (else fall back global).
-    if contiguous and seed is None:
+    # A border seed is needed by contiguous mode AND by the enclosed-region probe
+    # below, so resolve one whenever we lack it (auto-detect / sample_xy already
+    # set one; for an explicit or preset colour, find the closest-matching border
+    # pixel). No match within tolerance leaves seed None -> global removal, no probe.
+    if seed is None:
         bestd = 10 ** 9; bp = None
         for (px, py) in [(0, 0), (W - 1, 0), (0, H - 1), (W - 1, H - 1),
                          (W // 2, 0), (W // 2, H - 1), (0, H // 2), (W - 1, H // 2)]:
             c = compat.read_pixel(drawable, px, py)
+            # Skip already-transparent border pixels (same guard the auto-detect
+            # path uses). Transparent pixels store RGB (0,0,0), so on a dark target
+            # one scores a perfect d=0 and wins -- and a contiguous select seeded
+            # there yields an EMPTY selection, i.e. a knockout that removes nothing
+            # while reporting success. Realistic input: a file whose corner was
+            # already knocked out by an earlier pass.
+            if c[3] < 8:
+                continue
             d = abs(c[0] - target[0]) + abs(c[1] - target[1]) + abs(c[2] - target[2])
             if d < bestd:
                 bestd = d; bp = (px, py)
@@ -308,8 +318,78 @@ else:
     else:
         eff = req_mode; mode_basis = "requested"
 
+    want_contiguous = bool(contiguous and seed is not None)
+    applied_contiguous = False
+
+    # --- enclosed-region probe (BEFORE any destructive op) ---------------------
+    # A NON-contiguous removal also clears regions of the target colour that are
+    # not connected to the border. That is CORRECT for letter counters (the hole
+    # in an O) and donut holes -- background showing through, which must knock out
+    # so the garment shows -- and WRONG when the same colour is interior ARTWORK
+    # (linework, shadows). Colour alone cannot tell the two apart, so we do not
+    # guess: we measure and report, and the caller re-runs with contiguous=True if
+    # those regions were art. Reported as `enclosed_bbox` + a `warning`.
+    enclosed_bbox = None
+    if not want_contiguous and seed is not None:
+        Gimp.context_push()
+        try:
+            Gimp.context_set_sample_threshold(tol)
+            try: Gimp.context_set_sample_merged(False)
+            except Exception: pass
+            # all target-coloured pixels MINUS the border-connected region
+            img.select_color(Gimp.ChannelOps.REPLACE, drawable, gcol)
+            img.select_contiguous_color(Gimp.ChannelOps.SUBTRACT, drawable,
+                                        float(seed[0]), float(seed[1]))
+            # Both selections are anti-aliased, so subtracting leaves a 1px ring of
+            # PARTIAL values along every art edge (0.5 - 0.4 = 0.1). Selection.bounds
+            # counts any non-zero pixel, so that residue would inflate the bbox to the
+            # whole artwork and fire the warning on every anti-aliased design. Shrink
+            # by 1 to drop it; a genuinely enclosed region is areal and survives.
+            try: Gimp.Selection.shrink(img, 1)
+            except Exception: pass
+            _eb = compat.selection_bbox(img)
+            if _eb[0]:
+                enclosed_bbox = [int(_eb[1]), int(_eb[2]), int(_eb[3]), int(_eb[4])]
+        except Exception:
+            enclosed_bbox = None         # probe is advisory; never fail the knockout
+        finally:
+            Gimp.Selection.none(img)
+            Gimp.context_pop()
+
     if eff == "subtract":
-        compat.color_to_alpha(img, drawable, target=gcol, transparency_threshold=tol)
+        if want_contiguous:
+            # Restrict color-to-alpha to the border-connected background so
+            # interior artwork in the same colour survives. merge_filter honours
+            # the active selection (verified on 3.2.4).
+            Gimp.context_push()
+            try:
+                Gimp.context_set_sample_threshold(tol)
+                try: Gimp.context_set_antialias(True)
+                except Exception: pass
+                try: Gimp.context_set_sample_merged(False)
+                except Exception: pass
+                img.select_contiguous_color(Gimp.ChannelOps.REPLACE, drawable,
+                                            float(seed[0]), float(seed[1]))
+                if compat.selection_bbox(img)[0]:
+                    # Bridge the anti-aliased transition ring: the blend pixels
+                    # between background and art fall outside a threshold-matched
+                    # selection and would keep a dark fringe. Growing by 1px lets
+                    # color-to-alpha thin them proportionally -- which IS the soft
+                    # edge subtract mode exists to produce.
+                    try: Gimp.Selection.grow(img, 1)
+                    except Exception: pass
+                    if feather > 0:
+                        try: Gimp.Selection.feather(img, feather)
+                        except Exception: pass
+                    compat.color_to_alpha(img, drawable, target=gcol,
+                                          transparency_threshold=tol)
+                    applied_contiguous = True
+                Gimp.Selection.none(img)
+            finally:
+                Gimp.context_pop()
+        if not applied_contiguous:       # global subtract (also the fallback)
+            compat.color_to_alpha(img, drawable, target=gcol,
+                                  transparency_threshold=tol)
     else:                                # hard: select the colour, clear it
         Gimp.context_push()
         try:
@@ -318,7 +398,7 @@ else:
             except Exception: pass
             try: Gimp.context_set_sample_merged(False)
             except Exception: pass
-            if contiguous and seed is not None:
+            if want_contiguous:
                 img.select_contiguous_color(Gimp.ChannelOps.REPLACE, drawable,
                                             float(seed[0]), float(seed[1]))
             else:
@@ -328,6 +408,10 @@ else:
                 except Exception: pass
             if compat.selection_bbox(img)[0]:
                 drawable.edit_clear()
+                # Only now is it true that a contiguous removal was APPLIED --
+                # setting it right after the select would report success for an
+                # empty selection that cleared nothing (same rule as subtract).
+                applied_contiguous = want_contiguous
             Gimp.Selection.none(img)
         finally:
             Gimp.context_pop()
@@ -351,12 +435,29 @@ else:
     img.select_item(Gimp.ChannelOps.REPLACE, drawable)
     _bb = compat.selection_bbox(img)
     Gimp.Selection.none(img)
+    _warn = None
+    if contiguous and not applied_contiguous:
+        # Asked to protect enclosed art, couldn't (no usable border seed, or the
+        # seeded region came back empty) -- and the fallback is the GLOBAL removal
+        # that contiguous exists to avoid. Never let that pass silently.
+        _warn = ("contiguous=True was requested but could NOT be applied (no usable "
+                 "border seed for the removal colour), so a GLOBAL removal ran -- "
+                 "artwork in the removal colour was not protected. Pass sample_xy="
+                 "[x,y] pointing at the background to give it a seed.")
+    elif enclosed_bbox is not None:
+        _warn = ("regions of the removal colour that are NOT connected to the "
+                 "border were also cleared (bbox %r). Correct for letter counters "
+                 "and holes -- background that must show the garment through -- but "
+                 "if those were interior ARTWORK in the same colour, re-run with "
+                 "contiguous=True to keep them." % (enclosed_bbox,))
     _result = {"knocked_out": True, "mode": eff, "requested_mode": req_mode,
                "mode_basis": mode_basis,
                "color": [int(target[0]), int(target[1]), int(target[2])],
                "color_hex": "#%02x%02x%02x" % (int(target[0]), int(target[1]), int(target[2])),
                "auto_detected": auto, "tolerance": tol,
-               "contiguous": bool(eff == "hard" and contiguous and seed is not None),
+               "contiguous": applied_contiguous,
+               "contiguous_requested": bool(contiguous),
+               "enclosed_bbox": enclosed_bbox, "warning": _warn,
                "defringe": do_defringe, "clean": do_clean,
                "content_bbox": ([int(_bb[1]), int(_bb[2]), int(_bb[3]), int(_bb[4])]
                                 if _bb[0] else None),
@@ -687,7 +788,7 @@ def _list_shirt_presets(ctx=None):
 
 def _knockout_background(ctx, image=None, layer=None, color=None, shirt=None,
                          sample_xy=None, mode="auto", tolerance=None,
-                         contiguous=False, feather=0.0, defringe=False, clean=False):
+                         contiguous=None, feather=0.0, defringe=False, clean=False):
     mode = (mode or "auto").lower()
     if mode not in ("auto", "hard", "subtract"):
         return error_response(
@@ -709,6 +810,14 @@ def _knockout_background(ctx, image=None, layer=None, color=None, shirt=None,
             mode = p["mode"]
         if tolerance is None and p.get("tolerance") is not None:
             tolerance = float(p["tolerance"])
+        # A preset MAY carry a contiguous hint; an explicit caller value wins.
+        # No shipped preset sets it -- interior regions of the garment colour are
+        # usually letter counters/holes that must knock out, so contiguous stays
+        # opt-in. The field exists so art-specific presets can express it.
+        if contiguous is None and p.get("contiguous") is not None:
+            contiguous = bool(p["contiguous"])
+    if contiguous is None:
+        contiguous = False
     if tolerance is None:
         tolerance = 0.15                 # baseline when neither caller nor preset set it
     return ctx.run(_KNOCKOUT_CODE,
@@ -814,7 +923,7 @@ def register(mcp, ctx) -> None:
                             sample_xy: list[int] | None = None,
                             mode: str = "auto",
                             tolerance: float | None = None,
-                            contiguous: bool = False,
+                            contiguous: bool | None = None,
                             feather: float = 0.0,
                             defringe: bool = False,
                             clean: bool = False) -> dict:
@@ -837,8 +946,15 @@ def register(mcp, ctx) -> None:
         preset table it falls back to a luma rule (dark -> subtract / light ->
         hard). Override with 'hard'/'subtract' (case-insensitive). `tolerance` =
         match aggressiveness (default 0.15; a `shirt` preset supplies its own).
-        Hard mode: `contiguous=True` removes only the edge-connected region (keeps
-        design areas that reuse the bg colour); `feather` softens the cut.
+        `contiguous=True` (BOTH modes) removes only the border-connected region,
+        so areas of the background colour ENCLOSED by artwork survive. Leave it
+        off (default) when those enclosed areas are letter counters (the hole in
+        an O) or donut holes — background that must knock out so the garment shows
+        through. Turn it ON when they are interior ARTWORK in the garment colour
+        (black linework on a black shirt). Colour cannot distinguish the two, so
+        when a non-contiguous run clears enclosed regions the result reports
+        `enclosed_bbox` + a `warning` telling you to re-run with contiguous=True
+        if that was art. `feather` softens the cut.
         `defringe` (default OFF) trims a 1px halo but ERODES the art edge — enable
         only if you actually see a fringe. `clean` (default OFF) binarizes/denoises
         the alpha for film but HARDENS soft/anti-aliased edges — enable for crisp

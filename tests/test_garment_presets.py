@@ -57,3 +57,14 @@ def test_invalid_mode_errors():
     r = print_dtf._knockout_background(None, mode="soft")
     assert r["ok"] is False and r["error"]["type"] == "ValueError"
     assert "mode must be" in r["error"]["message"]
+
+
+def test_no_shipped_preset_enables_contiguous():
+    """A preset MAY carry a `contiguous` hint (honoured by _knockout_background),
+    but none of the shipped ones may set it True. Enclosed regions of the garment
+    colour are usually letter counters / holes, which must knock out so the shirt
+    shows through -- turning contiguous on by default would fill the hole in every
+    O, A, B, D, P, R and 0. Opt-in only. See CHANGELOG 0.3.2."""
+    from gimp_mcp.tools.print_dtf import _load_garment_presets
+    enabled = [n for n, p in _load_garment_presets().items() if p.get("contiguous")]
+    assert not enabled, ("presets must not default contiguous on: %r" % (enabled,))

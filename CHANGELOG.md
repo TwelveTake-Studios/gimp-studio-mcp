@@ -6,6 +6,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-07-19
+
+Fixes a silent-data-loss path in `knockout_background` on dark garments, and makes
+the tool report what it removed instead of guessing. No tool added or removed.
+
+### Fixed
+- **`contiguous=True` was silently ignored in `subtract` mode.** The six dark
+  garment presets (black, navy, charcoal, royal, maroon, forest) resolve to
+  `subtract` -> `color_to_alpha`, which is global, and the subtract path never
+  looked at the flag. A caller asking for interior preservation did not get it and
+  got no error. `subtract` now restricts `color_to_alpha` to the border-connected
+  background when `contiguous=True`, so artwork in the garment colour that is
+  ENCLOSED by other art survives. The selection is grown 1px first so the
+  anti-aliased transition ring is still thinned -- the soft edge subtract mode
+  exists to produce.
+- **The border-seed ballot no longer picks a transparent pixel.** Transparent
+  pixels store RGB `(0,0,0)`, so for a dark removal colour an already-transparent
+  border pixel scored a perfect match and won — and a contiguous select seeded on
+  transparency yields an empty selection, i.e. a knockout that removed nothing
+  while reporting success. Realistic input: a file whose corner was cleared by an
+  earlier pass. The ballot now skips transparent pixels, the same guard the
+  auto-detect path already applied.
+- **`contiguous` no longer reports a removal that did not happen.** In hard mode
+  the flag was recorded right after building the selection rather than after the
+  clear, so an empty selection reported `contiguous: true` having cleared nothing.
+- **`contiguous=True` that cannot be applied now warns.** When no usable border
+  seed exists the run falls back to a GLOBAL removal — precisely what `contiguous`
+  was asked to prevent — so it now says so and suggests `sample_xy=[x,y]`.
+- **Interior removals are no longer silent.** A non-contiguous run now reports
+  `enclosed_bbox` and a `warning` when it cleared regions of the removal colour
+  that are not connected to the border. This is *correct* for letter counters (the
+  hole in an O) and donut holes -- background that must knock out so the garment
+  shows through -- and *wrong* when those regions were interior artwork. Colour
+  cannot distinguish the two, so the tool measures, reports, and names the escape
+  hatch rather than guessing.
+
+### Added
+- Garment presets may carry a `contiguous` hint, honoured unless the caller passes
+  an explicit value. **No shipped preset sets it** -- enclosed regions of the
+  garment colour are usually letter counters, and defaulting it on would fill the
+  hole in every O, A, B, D, P, R and 0. Opt-in only, pinned by a test.
+- `knockout_background` result gains `contiguous` (what was actually applied),
+  `contiguous_requested`, `enclosed_bbox` and `warning`.
+
+### Notes
+- A *global* subtract from a dark key also thins the alpha of all remaining art
+  toward each pixel's own brightest channel (an orange logo lands near 87% alpha).
+  That is inherent to color-to-alpha and unchanged here -- but `contiguous=True`
+  avoids it entirely, keeping art at full opacity.
+
 ## [0.3.1] - 2026-07-19
 
 Honesty release: tools that can never do what they advertise now say so in `ok`,
@@ -182,7 +232,8 @@ bridge, verified against real GIMP **3.0.4** and **3.2.4**.
   over stdio) and scrubs `PYTHONPATH` / `PYTHONHOME` so the external venv never
   leaks into GIMP's Python.
 
-[Unreleased]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.1.1...v0.2.0

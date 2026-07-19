@@ -557,3 +557,198 @@ def test_gang_sheet(gimp, grp, tmp_path):
     assert isinstance(res["sheet_px"], list) and len(res["sheet_px"]) == 2
     assert res["sheet_px"][0] == 600 and res["sheet_px"][1] > 0
     assert os.path.exists(gang_out) and os.path.getsize(gang_out) > 0
+
+
+# ---------------------------------------------------------------------------
+# v0.3.2 — contiguous in SUBTRACT mode + the enclosed-region report.
+# Dark-garment presets resolve to subtract (color-to-alpha), which is GLOBAL:
+# it also clears the garment colour ENCLOSED by artwork. That is correct for a
+# letter counter (the hole in an O must knock out so the shirt shows through)
+# and wrong for interior artwork in the same colour. Colour cannot tell them
+# apart, so the default stays global and the tool REPORTS what it cleared.
+# ---------------------------------------------------------------------------
+# Shirt-colour canvas + an ANTI-ALIASED art disc, optionally with an enclosed
+# disc of the shirt colour inside it (a letter counter). Anti-aliasing and scale
+# both matter: the probe's false-positive residue only crosses the colour
+# threshold on a curve with enough blend pixels, so a small axis-aligned
+# rectangle fixture cannot exercise the shrink(1) guard at all (verified: with
+# the guard deleted, a 120x120 rectangle fixture stays green while this one
+# fails). Keep it curved and keep it 400px.
+_ENCLOSED_FIXTURE = """
+img = Gimp.Image.new(400, 400, Gimp.ImageBaseType.RGB)
+layer = Gimp.Layer.new(img, "a", 400, 400, Gimp.ImageType.RGBA_IMAGE, 100.0, Gimp.LayerMode.NORMAL)
+img.insert_layer(layer, None, 0)
+Gimp.context_push()
+Gimp.context_set_antialias(True)
+img.select_rectangle(Gimp.ChannelOps.REPLACE, 0, 0, 400, 400)
+Gimp.context_set_foreground(compat.color("#1c1c1c")); layer.edit_fill(Gimp.FillType.FOREGROUND)
+img.select_ellipse(Gimp.ChannelOps.REPLACE, 80, 80, 240, 240)
+Gimp.context_set_foreground(compat.color("#e8791e")); layer.edit_fill(Gimp.FillType.FOREGROUND)
+if args.get("enclosed"):
+    img.select_ellipse(Gimp.ChannelOps.REPLACE, 150, 150, 100, 100)
+    Gimp.context_set_foreground(compat.color("#1c1c1c")); layer.edit_fill(Gimp.FillType.FOREGROUND)
+Gimp.context_pop(); Gimp.Selection.none(img)
+compat.ensure_alpha(layer)
+_result = {"id": img.get_id(), "lid": layer.get_id()}
+"""
+
+
+def _enclosed_fixture(gimp, enclosed=True):
+    f = gimp.run(_ENCLOSED_FIXTURE, args={"enclosed": enclosed},
+                 undo_group=False).to_dict()
+    assert f["ok"], f["error"]
+    return f["result"]["id"], f["result"]["lid"]
+
+
+def test_knockout_subtract_contiguous_keeps_interior_art(gimp, grp):
+    """THE v0.3.2 BUG: contiguous was silently ignored in subtract mode, so a
+    caller who asked for interior preservation did not get it and got no error."""
+    iid, lid = _enclosed_fixture(gimp)
+    try:
+        r = grp._knockout_background(gimp, image=iid, shirt="black", contiguous=True)
+        assert r["ok"], r["error"]
+        res = r["result"]
+        assert res["mode"] == "subtract", res          # the preset routes here
+        assert res["contiguous"] is True, res          # ...and it is HONOURED now
+        assert res["enclosed_bbox"] is None, res       # nothing was eaten
+        assert res["warning"] is None, res
+        corner = _probe_pixel(gimp, lid, 1, 1)["result"]["rgba"]
+        assert corner[3] < 40, ("background not cleared", corner)
+        inner = _probe_pixel(gimp, lid, 200, 200)["result"]["rgba"]
+        assert inner[3] > 200, ("interior art erased despite contiguous=True", inner)
+    finally:
+        _del_img(gimp, iid)
+
+
+def test_knockout_subtract_default_clears_enclosed_and_reports_it(gimp, grp):
+    """Default (non-contiguous) must STILL clear enclosed background -- letter
+    counters depend on it -- but must not do so silently."""
+    iid, lid = _enclosed_fixture(gimp)
+    try:
+        r = grp._knockout_background(gimp, image=iid, shirt="black")
+        assert r["ok"], r["error"]
+        res = r["result"]
+        assert res["contiguous"] is False, res
+        inner = _probe_pixel(gimp, lid, 200, 200)["result"]["rgba"]
+        assert inner[3] < 40, ("enclosed background should knock out", inner)
+        # ...and the tool says so, pointing at the escape hatch.
+        assert res["enclosed_bbox"] is not None, res
+        x1, y1, x2, y2 = res["enclosed_bbox"]
+        assert 149 <= x1 <= 152 and 149 <= y1 <= 152, res["enclosed_bbox"]
+        assert 248 <= x2 <= 251 and 248 <= y2 <= 251, res["enclosed_bbox"]
+        assert "contiguous=True" in (res["warning"] or ""), res["warning"]
+    finally:
+        _del_img(gimp, iid)
+
+
+def test_knockout_enclosed_probe_no_false_positive(gimp, grp):
+    """Anti-aliased art edges leave a 1px partial-selection residue when the
+    border-connected region is subtracted (0.5 - 0.4 = 0.1, still non-zero, and
+    Selection.bounds counts it). Without the shrink(1) guard that residue reports
+    as 'enclosed' on EVERY design, and a warning that always fires is worth nothing.
+
+    The fixture MUST be anti-aliased (ellipse, not rectangle): axis-aligned
+    integer rectangles produce zero partial pixels, so the probe returns an empty
+    selection before shrink is ever reached and the guard is never exercised --
+    the test would then stay green with the shrink deleted.
+    """
+    iid, _lid = _enclosed_fixture(gimp, enclosed=False)
+    try:
+        r = grp._knockout_background(gimp, image=iid, shirt="black")
+        assert r["ok"], r["error"]
+        assert r["result"]["enclosed_bbox"] is None, r["result"]["enclosed_bbox"]
+        assert r["result"]["warning"] is None, r["result"]["warning"]
+    finally:
+        _del_img(gimp, iid)
+
+
+def test_knockout_contiguous_requested_but_unusable_seed_warns(gimp, grp):
+    """contiguous=True falls back to a GLOBAL removal when no usable border seed
+    exists -- the exact destruction contiguous was asked to prevent. It must not
+    do that silently. Fixture: every border pixel is already transparent, so no
+    seed qualifies (transparent pixels read RGB 0,0,0 and would otherwise win for
+    a dark target, seeding an empty selection that clears nothing)."""
+    code = """
+img = Gimp.Image.new(80, 80, Gimp.ImageBaseType.RGB)
+layer = Gimp.Layer.new(img, "a", 80, 80, Gimp.ImageType.RGBA_IMAGE, 100.0, Gimp.LayerMode.NORMAL)
+img.insert_layer(layer, None, 0)
+compat.ensure_alpha(layer)
+layer.fill(Gimp.FillType.TRANSPARENT)
+Gimp.context_push()
+img.select_rectangle(Gimp.ChannelOps.REPLACE, 20, 20, 40, 40)
+Gimp.context_set_foreground(compat.color("#1c1c1c")); layer.edit_fill(Gimp.FillType.FOREGROUND)
+Gimp.context_pop(); Gimp.Selection.none(img)
+_result = {"id": img.get_id(), "lid": layer.get_id()}
+"""
+    f = gimp.run(code, undo_group=False).to_dict()
+    assert f["ok"], f["error"]
+    iid = f["result"]["id"]
+    try:
+        r = grp._knockout_background(gimp, image=iid, color="#1c1c1c",
+                                     mode="subtract", contiguous=True)
+        assert r["ok"], r["error"]
+        res = r["result"]
+        assert res["contiguous_requested"] is True, res
+        assert res["contiguous"] is False, ("claimed a contiguous run it "
+                                            "could not perform", res)
+        assert "could NOT be applied" in (res["warning"] or ""), res["warning"]
+    finally:
+        _del_img(gimp, iid)
+
+
+def test_knockout_contiguous_defaults_off_for_shipped_presets(gimp, grp):
+    """No shipped preset may turn contiguous on: enclosed garment-colour regions
+    are usually letter counters, which MUST knock out. Guards a future preset
+    edit from silently changing every dark-garment knockout."""
+    iid, _lid = _enclosed_fixture(gimp)
+    try:
+        r = grp._knockout_background(gimp, image=iid, shirt="black")
+        assert r["ok"], r["error"]
+        assert r["result"]["contiguous"] is False
+        assert r["result"]["contiguous_requested"] is False
+    finally:
+        _del_img(gimp, iid)
+
+
+def test_knockout_seed_skips_transparent_border(gimp, grp):
+    """A partially-processed file (corner already knocked out by an earlier pass)
+    must not defeat contiguous mode. Transparent pixels store RGB (0,0,0), so for
+    a DARK target a transparent border pixel scores a perfect distance and wins
+    the seed ballot -- and a contiguous select seeded on transparency yields an
+    empty selection, i.e. a knockout that removes NOTHING while reporting success.
+    The seed ballot skips transparent pixels (same guard the auto-detect path
+    already used)."""
+    code = """
+img = Gimp.Image.new(80, 80, Gimp.ImageBaseType.RGB)
+layer = Gimp.Layer.new(img, "a", 80, 80, Gimp.ImageType.RGBA_IMAGE, 100.0, Gimp.LayerMode.NORMAL)
+img.insert_layer(layer, None, 0)
+compat.ensure_alpha(layer)
+Gimp.context_push()
+img.select_rectangle(Gimp.ChannelOps.REPLACE, 0, 0, 80, 80)
+Gimp.context_set_foreground(compat.color("#1c1c1c")); layer.edit_fill(Gimp.FillType.FOREGROUND)
+img.select_rectangle(Gimp.ChannelOps.REPLACE, 30, 30, 25, 25)
+Gimp.context_set_foreground(compat.color("#ffffff")); layer.edit_fill(Gimp.FillType.FOREGROUND)
+Gimp.context_pop()
+# an earlier pass already cleared the top-left corner to transparent
+img.select_rectangle(Gimp.ChannelOps.REPLACE, 0, 0, 10, 10)
+layer.edit_clear()
+Gimp.Selection.none(img)
+_result = {"id": img.get_id(), "lid": layer.get_id()}
+"""
+    f = gimp.run(code, undo_group=False).to_dict()
+    assert f["ok"], f["error"]
+    iid, lid = f["result"]["id"], f["result"]["lid"]
+    try:
+        before = _probe_pixel(gimp, lid, 60, 60)["result"]["rgba"]
+        assert before[3] > 200, ("fixture: background should start opaque", before)
+        r = grp._knockout_background(gimp, image=iid, color="#1c1c1c",
+                                     mode="hard", contiguous=True)
+        assert r["ok"], r["error"]
+        after = _probe_pixel(gimp, lid, 60, 60)["result"]["rgba"]
+        assert after[3] < 40, ("background not removed -- the seed ballot picked a "
+                               "transparent pixel and cleared nothing", after)
+        art = _probe_pixel(gimp, lid, 42, 42)["result"]["rgba"]
+        assert art[3] > 200, ("art destroyed", art)
+        assert r["result"]["contiguous"] is True, r["result"]
+    finally:
+        _del_img(gimp, iid)
