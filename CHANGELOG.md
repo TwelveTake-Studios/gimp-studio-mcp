@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-09-28
+
+### Added
+- **Listed in the official MCP Registry** as `com.twelvetake/gimp-studio-mcp`, so MCP clients and
+  directories that read the registry can find and install it. The listing is `server.json` in the
+  repository.
+- A `twelvetake-gimp-studio-mcp` command, the same program as `gimp-mcp`, so
+  `uvx twelvetake-gimp-studio-mcp serve` works the way registry-aware clients launch a package.
+
 ## [0.3.2] - 2026-07-19
 
 Fixes a silent-data-loss path in `knockout_background` on dark garments, and makes
@@ -232,7 +241,8 @@ bridge, verified against real GIMP **3.0.4** and **3.2.4**.
   over stdio) and scrubs `PYTHONPATH` / `PYTHONHOME` so the external venv never
   leaks into GIMP's Python.
 
-[Unreleased]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.2.0...v0.3.0

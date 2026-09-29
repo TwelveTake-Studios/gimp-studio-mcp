@@ -5,4 +5,4 @@ bridge, with structured returns, a GIMP-3 compat layer, safety checkpoints, and
 print/DTF-aware tooling. Run the server with ``gimp-mcp serve``.
 """
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"

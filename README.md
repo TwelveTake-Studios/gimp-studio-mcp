@@ -10,6 +10,8 @@ A [TwelveTake Studios](https://twelvetake.com) project.
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow)](https://buymeacoffee.com/twelvetake)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-support-ff5e5b)](https://ko-fi.com/twelvetake)
 
+Listed in the [MCP Registry](https://registry.modelcontextprotocol.io/) as `mcp-name: com.twelvetake/gimp-studio-mcp`.
+
 A comprehensive **GIMP 3.x MCP server** that gives an AI agent full, reliable control of GIMP — with structured returns, real error capture, a GIMP-3 compatibility layer, safety checkpoints, and print/DTF-aware tooling.
 
 **119 tools across 13 groups**, each behaviorally tested against a real (headless) GIMP. Built for a working print shop's DTF (direct-to-film) pipeline, not as a thin API wrapper.
@@ -70,10 +72,10 @@ Tools are self-describing through your MCP client; `describe_op` and `list_*` to
 
 ### 1. Install the server
 
-GitHub-first (recommended while the PyPI release is a fast-follow):
+From PyPI:
 
 ```bash
-pipx install git+https://github.com/TwelveTake-Studios/gimp-studio-mcp
+pipx install twelvetake-gimp-studio-mcp
 ```
 
 Or from a clone:
