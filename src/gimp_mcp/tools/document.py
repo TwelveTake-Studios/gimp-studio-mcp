@@ -6,6 +6,8 @@ functions are module-level so they can be unit-tested against a bridge directly.
 """
 from __future__ import annotations
 
+from gimp_mcp.tools._snippets import SAVE_CHECKED
+
 _META_CODE = """
 img = find_image(args.get("image"))
 f = img.get_file()
@@ -54,7 +56,7 @@ _result = {"image": img.get_id(), "width": img.get_width(), "height": img.get_he
 # composites onto the background and DROPS alpha (the DTF footgun — silently ruins a
 # transparent cutout), so we only flatten when the target format can't store alpha
 # (jpg/bmp) or the caller asks; otherwise merge_visible_layers keeps transparency.
-_EXPORT_CODE = """
+_EXPORT_CODE = SAVE_CHECKED + """
 import os
 img = find_image(args.get("image"))
 path = args["path"]
@@ -79,9 +81,10 @@ else:
         dup.merge_visible_layers(Gimp.MergeType.CLIP_TO_IMAGE)
     except Exception:
         pass
-f = Gio.File.new_for_path(path)
-Gimp.file_save(Gimp.RunMode.NONINTERACTIVE, dup, f)
-dup.delete()
+try:
+    _save_checked(dup, path)
+finally:
+    dup.delete()
 
 alpha_out = bool((not do_flatten) and had_alpha and fmt_alpha)
 dropped = bool(had_alpha and not alpha_out)

@@ -220,7 +220,9 @@ def register(mcp, ctx) -> None:
                low_out: float = 0.0, high_out: float = 1.0,
                image: int | str | None = None) -> dict:
         """Adjust levels on a drawable. channel: value|red|green|blue|alpha.
-        Inputs/outputs are 0.0-1.0 floats; gamma is the midtone exponent."""
+        Inputs/outputs are 0.0-1.0 floats in LINEAR light, not the 0-255 sRGB values
+        color_at reports: a pixel color_at reads as 200 sits at about 0.58 here.
+        gamma is the midtone exponent."""
         return _levels(ctx, layer, channel, low_in, high_in, gamma,
                        low_out, high_out, image)
 
@@ -228,7 +230,8 @@ def register(mcp, ctx) -> None:
     def curves(points: list[float], layer: int | str | None = None,
                channel: str = "value", image: int | str | None = None) -> dict:
         """Apply a spline curve. `points` = flat [x0,y0,x1,y1,...] control points
-        in 0.0-1.0. channel: value|red|green|blue|alpha."""
+        in 0.0-1.0, in LINEAR light like levels (not the sRGB values color_at
+        reports). channel: value|red|green|blue|alpha."""
         return _curves(ctx, points, layer, channel, image)
 
     @mcp.tool(name="brightness_contrast")
@@ -282,7 +285,8 @@ def register(mcp, ctx) -> None:
                   layer: int | str | None = None, channel: str = "value",
                   image: int | str | None = None) -> dict:
         """Black/white threshold: pixels in [low, high] -> white, else black.
-        low/high are 0.0-1.0. channel: value|red|green|blue|alpha."""
+        low/high are 0.0-1.0 on the same sRGB scale as color_at (divide its 0-255
+        values by 255). channel: value|red|green|blue|alpha."""
         return _threshold(ctx, low, high, layer, channel, image)
 
     @mcp.tool(name="normalize")

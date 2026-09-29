@@ -16,11 +16,11 @@ A comprehensive **GIMP 3.x MCP server** that gives an AI agent full, reliable co
 
 **119 tools across 13 groups**, each behaviorally tested against a real (headless) GIMP. Built for a working print shop's DTF (direct-to-film) pipeline, not as a thin API wrapper.
 
-**Status:** v1 — feature-complete and verified on GIMP **3.0.4** and **3.2.4** (headless and live).
+**Status:** beta. Tested on GIMP **3.2.4**, headless and live. Releases up to 0.3.3 were also tested on GIMP 3.0.4.
 
 ## Why this exists
 
-The existing thin GIMP MCP wrapper is intentionally minimal — one universal `call_api` console exec plus a few read-only inspectors. That's a deliberate design, not a gap to PR against. This is a **separate project** that makes a different bet: own the ergonomics layer the thin wrapper punts to the model at runtime, so the agent gets validated, structured, print-aware tools instead of having to write GIMP Python by hand every time.
+Other GIMP MCP servers exist. This one is built around print and DTF production: real inches at print DPI, shirt-color knockout and transparent PNGs ready for film. Every tool returns a structured result, so the agent doesn't write GIMP Python by hand for everyday edits.
 
 ### The design rules (every tool follows these)
 

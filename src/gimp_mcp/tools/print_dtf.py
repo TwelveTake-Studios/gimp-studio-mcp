@@ -28,6 +28,7 @@ import json
 from pathlib import Path
 
 from gimp_mcp.bridge.protocol import error_response, ok_response
+from gimp_mcp.tools._snippets import SAVE_CHECKED
 
 
 # ---------------------------------------------------------------------------
@@ -565,7 +566,7 @@ _result = {
 # Loads each file as a layer, packs left->right / top->bottom leaving a gutter,
 # grows the canvas height as needed, exports a print-ready PNG at dpi.
 # ---------------------------------------------------------------------------
-_GANG_CODE = """
+_GANG_CODE = SAVE_CHECKED + """
 import math
 
 files = list(args.get("files") or [])
@@ -631,8 +632,11 @@ if final_h != img.get_height():
 
 # Export with alpha preserved: merge visible into one layer, save PNG.
 merged = img.merge_visible_layers(Gimp.MergeType.CLIP_TO_IMAGE)
-of = Gio.File.new_for_path(out_path)
-Gimp.file_save(Gimp.RunMode.NONINTERACTIVE, img, of)
+try:
+    _save_checked(img, out_path)
+except Exception:
+    img.delete()
+    raise
 
 _result = {"placed": placed, "skipped": skipped,
            "sheet_px": [sheet_w, final_h], "out_path": out_path,
@@ -682,7 +686,7 @@ _result = {
 # ---------------------------------------------------------------------------
 # export_dtf_png — transparent, print-ready PNG (PRESERVE ALPHA, do NOT flatten).
 # ---------------------------------------------------------------------------
-_EXPORT_CODE = """
+_EXPORT_CODE = SAVE_CHECKED + """
 img = find_image(args.get("image"))
 path = args["path"]
 dpi = args.get("dpi")
@@ -696,11 +700,12 @@ try:
     dup.merge_visible_layers(Gimp.MergeType.CLIP_TO_IMAGE)
 except Exception:
     pass
-f = Gio.File.new_for_path(path)
-Gimp.file_save(Gimp.RunMode.NONINTERACTIVE, dup, f)
-_xr, _yr = compat.image_resolution(dup)
+try:
+    _save_checked(dup, path)
+    _xr, _yr = compat.image_resolution(dup)
+finally:
+    dup.delete()
 out_dpi = _xr or _yr
-dup.delete()
 _result = {"saved": path, "dpi": out_dpi, "alpha_preserved": True, "image": img.get_id()}
 """
 

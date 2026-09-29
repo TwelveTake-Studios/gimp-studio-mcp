@@ -43,7 +43,7 @@ from gi.repository import Gimp, GLib  # noqa: E402  (must follow gi.require_vers
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import protocol as P  # noqa: E402  (must follow the sys.path.insert above)
 
-__bridge_version__ = "0.4.1"  # +do_set_i18n (silence GIMP 3.x i18n load warnings); 0.4.0: +Gegl.init seed, +scratch reset
+__bridge_version__ = "0.5.0"
 
 _LOGFILE = os.path.join(tempfile.gettempdir(), "gimp-mcp-bridge.log")
 

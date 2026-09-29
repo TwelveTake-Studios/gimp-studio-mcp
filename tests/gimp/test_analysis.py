@@ -258,16 +258,14 @@ _result = {"image": img.get_id()}
         _del(gimp, iid)
 
 
-def test_histogram_gimp_space_opt_out_differs(gimp, grp):
-    """space='gimp' returns GIMP's native PDB stats (gamma-re-encoded axis ~200 for
-    this gray) — a decisively different number from the perceptual default (~148)."""
+def test_histogram_gimp_space_agrees_with_perceptual(gimp, grp):
     iid = _gray(gimp, 148)
     try:
         perc = grp._histogram(gimp, channel="value", image=iid, space="perceptual")["result"]
         native = grp._histogram(gimp, channel="value", image=iid, space="gimp")["result"]
         assert native["space"] == "gimp"
-        assert native["mean"] > 185, native["mean"]           # ~200, the old behaviour
-        assert native["mean"] - perc["mean"] > 30, (native["mean"], perc["mean"])
+        assert abs(perc["mean"] - 148) <= 1, perc["mean"]
+        assert abs(native["mean"] - perc["mean"]) <= 2, (native["mean"], perc["mean"])
     finally:
         _del(gimp, iid)
 

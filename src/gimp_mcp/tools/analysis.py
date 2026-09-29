@@ -15,6 +15,8 @@ Tools:
 """
 from __future__ import annotations
 
+from gimp_mcp.tools._snippets import SAVE_CHECKED
+
 # Render a SCALED/CROPPED/COMPOSITED COPY of the image so the agent can SEE it.
 # Works on a duplicate (the user's open image is never mutated). The server wraps
 # the result as VIEWABLE MCP image content. Two ceilings keep it from overflowing
@@ -22,7 +24,7 @@ from __future__ import annotations
 # encoded size) — if the render exceeds max_bytes we auto-step the longest side
 # down and re-render. save_to=<path> writes the render to disk instead of inlining
 # it (the escape hatch for big previews: returns the path, no base64).
-_BITMAP_CODE = """
+_BITMAP_CODE = SAVE_CHECKED + """
 import os, tempfile, base64
 img = find_image(args.get("image"))
 src = img.duplicate()
@@ -59,8 +61,7 @@ try:
                 s = float(target_dim) / float(longest)
                 d.scale(max(1, int(round(cw * s))), max(1, int(round(ch * s))))
             ow, oh = d.get_width(), d.get_height()
-            Gimp.file_save(Gimp.RunMode.NONINTERACTIVE, d,
-                           Gio.File.new_for_path(out_path))
+            _save_checked(d, out_path)
             return ow, oh
         finally:
             d.delete()
@@ -142,13 +143,6 @@ rgba = list(compat.read_pixel(draw, int(args["x"]), int(args["y"])))
 _result = {"rgba": rgba}
 """
 
-# Channel statistics. GIMP's native PDB histogram reports its value axis on a
-# gamma-RE-ENCODED curve: a solid perceptual-0.58 gray reads mean ~0.78 (200/255),
-# which does NOT match read_pixel / color_at / get_bitmap / levels (all perceptual
-# 0-255). So by default we compute the stats ourselves from the drawable's own
-# pixels in that SAME perceptual space — histogram numbers now line up with what
-# those tools show and with what levels/curves consume (÷255 for their 0-1 inputs).
-# space='gimp' returns the old native PDB behaviour as an opt-out.
 _HISTOGRAM_CODE = """
 import collections
 draw = find_drawable(args.get("image"), args.get("layer"))
@@ -156,8 +150,6 @@ ch_name = (args.get("channel") or "value").upper().replace("-", "_")
 space = (args.get("space") or "perceptual").lower()
 
 if space == "gimp":
-    # GIMP 3.0: returns (ok?, mean, std_dev, median, pixels, count, percentile) on
-    # the gamma-re-encoded value axis (kept as an opt-out / parity with GIMP's dialog).
     try:
         ch = getattr(Gimp.HistogramChannel, ch_name)
     except AttributeError:
@@ -206,9 +198,6 @@ else:
         n = w * h
         buf = src.get_buffer()
         rect = Gegl.Rectangle.new(0, 0, w, h)
-        # Pick the babl format whose bytes match read_pixel's perceptual value. The
-        # no-prime 'RGBA u8' matches on GIMP 3.x ('R'G'B'A u8' gives the re-encoded
-        # curve); auto-select so a future babl/version flip can't silently mislabel.
         ref = list(compat.read_pixel(src, 0, 0))
         data = None
         for fmt in ("RGBA u8", "R'G'B'A u8"):
@@ -436,13 +425,11 @@ def register(mcp, ctx) -> None:
         """Channel statistics (value|red|green|blue|alpha|luminance).
 
         space='perceptual' (default) computes the stats from the drawable's own pixels
-        in the SAME 0-255 space as color_at/get_bitmap — and that levels/curves consume
-        (divide by 255 for their 0.0-1.0 inputs) — returning mean, std_dev, median, min,
-        max (all 0-255) plus pixels/count. space='gimp' returns GIMP's native PDB
-        histogram (mean/std_dev/median/percentile, no min/max), whose value axis is
-        gamma-re-encoded and does NOT line up with those tools (a perceptual-0.58 gray
-        reads ~200/255 there, not 148). Very large drawables are point-sampled at reduced
-        resolution (min/max are from the sample, flagged by `sampled`)."""
+        in the same 0-255 sRGB values as color_at/get_bitmap, returning mean, std_dev,
+        median, min, max (all 0-255) plus pixels/count. space='gimp' returns GIMP's
+        native PDB histogram (mean/std_dev/median/percentile, no min/max).
+        Very large drawables are point-sampled at reduced resolution (min/max are from
+        the sample, flagged by `sampled`)."""
         return _histogram(ctx, channel, image, layer, space)
 
     @mcp.tool(name="list_gegl_ops")

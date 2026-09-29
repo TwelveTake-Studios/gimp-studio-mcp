@@ -18,9 +18,18 @@ try:
     gi.require_version("Gegl", "0.4")
 except Exception:
     pass
-from gi.repository import Gimp, Gegl  # noqa: E402
+try:
+    gi.require_version("Babl", "0.1")
+except Exception:
+    pass
+import struct  # noqa: E402
 
-__compat_version__ = "0.4.0"  # +layer_offsets / image_resolution (get_offsets/get_resolution 3-tuple owners)
+from gi.repository import Babl, Gegl, Gimp, GLib  # noqa: E402
+
+__compat_version__ = "0.5.0"
+
+_SRGB_U8 = "R'G'B'A u8"
+_SRGB_DOUBLE = "R'G'B'A double"
 
 
 def color(spec):
@@ -37,11 +46,10 @@ def color(spec):
         if len(vals) == 3:
             vals.append(255 if _looks_255(vals) else 1.0)
         if _looks_255(vals):
-            r, g, b, a = (v / 255.0 for v in vals)
-        else:
-            r, g, b, a = vals
+            vals = [v / 255.0 for v in vals]
+        vals = [min(1.0, max(0.0, float(v))) for v in vals]
         c = Gegl.Color.new("black")
-        c.set_rgba(float(r), float(g), float(b), float(a))
+        c.set_bytes(Babl.format(_SRGB_DOUBLE), GLib.Bytes.new(struct.pack("=4d", *vals)))
         return c
     raise ValueError("unrecognized color spec: %r" % (spec,))
 
@@ -53,8 +61,7 @@ def _looks_255(vals) -> bool:
 
 def rgba(gcolor) -> tuple:
     """(r, g, b, a) as 0-255 ints from a Gegl.Color."""
-    r, g, b, a = gcolor.get_rgba()
-    return (round(r * 255), round(g * 255), round(b * 255), round(a * 255))
+    return tuple(gcolor.get_bytes(Babl.format(_SRGB_U8)).get_data())
 
 
 def read_pixel(drawable, x: int, y: int) -> tuple:

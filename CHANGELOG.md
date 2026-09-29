@@ -6,6 +6,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-09-29
+
+**After you update, run `gimp-mcp install-plugin --force`, then restart GIMP.** The color fixes
+are in the GIMP plug-in, and GIMP loads the new one when it starts.
+
+### Fixed
+- **`knockout_background` matched colored shirts to the wrong preset.** In automatic mode it read
+  the shirt color and the presets on different scales. A red shirt matched maroon and got
+  maroon's removal technique, which can eat reds out of the art. Gray, kelly green and royal
+  shirts were also mismatched. Each shirt now matches its own preset. Black and white shirts
+  weren't affected.
+- **Color values came back on the wrong scale.** `color_at`, `read_region`, `set_fg`, `set_bg` and
+  `knockout_background` reported linear-light values, so `#C62828` read as (144, 5, 5). They now
+  report the values your hex codes use: (198, 40, 40) for that red. Colors you give as (r, g, b)
+  numbers now mean those values too. Hex codes and color names were always right.
+- **Saving to a folder that doesn't exist reported success.** `export_image`, `export_dtf_png`,
+  `gang_sheet` and `get_bitmap` with `save_to` said the file was saved and wrote nothing. They now
+  return an error that names the missing folder.
+- **The tool descriptions now say which scale each color tool uses.** `histogram` no longer claims
+  that GIMP's own histogram disagrees with `color_at`. `levels` and `curves` take linear-light
+  values. `threshold` uses the same scale as `color_at`.
+
 ## [0.3.3] - 2026-09-28
 
 ### Added
@@ -241,7 +263,8 @@ bridge, verified against real GIMP **3.0.4** and **3.2.4**.
   over stdio) and scrubs `PYTHONPATH` / `PYTHONHOME` so the external venv never
   leaks into GIMP's Python.
 
-[Unreleased]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.0...v0.3.1

@@ -18,13 +18,17 @@ GROUP = "filters"
 # --- PROVEN fixture-builder code (VERBATIM from spike/test_filters.py) --------
 # 64x48 RGBA layer with a solid red square so blur/sharpen/pixelize have an edge.
 _FIXTURE_CODE = '''
+def _linear_rgb(r, g, b):
+    c = Gegl.Color.new("black")
+    c.set_rgba(r, g, b, 1.0)
+    return c
 img = Gimp.Image.new(64, 48, Gimp.ImageBaseType.RGB)
 layer = Gimp.Layer.new(img, "fixture", 64, 48, Gimp.ImageType.RGBA_IMAGE,
                        100.0, Gimp.LayerMode.NORMAL)
 img.insert_layer(layer, None, 0)
 layer.fill(Gimp.FillType.TRANSPARENT)
 # Paint a solid red square in the middle so blur/sharpen have an edge to act on.
-Gimp.context_set_foreground(compat.color((220, 30, 30)))
+Gimp.context_set_foreground(_linear_rgb(220 / 255, 30 / 255, 30 / 255))
 Gimp.Image.select_rectangle(img, Gimp.ChannelOps.REPLACE, 16, 12, 32, 24)
 Gimp.Drawable.edit_fill(layer, Gimp.FillType.FOREGROUND)
 Gimp.Selection.none(img)
@@ -36,14 +40,18 @@ _result = {"image": img.get_id(), "layer": layer.get_id()}
 # Unsharp mask overshoot/undershoot is only provable on a real luminance gradient;
 # on the RGBA red square the transparent<->opaque edge clamps and hides it.
 _GRAD_FIXTURE = '''
+def _linear_rgb(r, g, b):
+    c = Gegl.Color.new("black")
+    c.set_rgba(r, g, b, 1.0)
+    return c
 img = Gimp.Image.new(64, 48, Gimp.ImageBaseType.RGB)
 layer = Gimp.Layer.new(img, "grad", 64, 48, Gimp.ImageType.RGB_IMAGE,
                        100.0, Gimp.LayerMode.NORMAL)
 img.insert_layer(layer, None, 0)
-Gimp.context_set_foreground(compat.color((40, 40, 40)))
+Gimp.context_set_foreground(_linear_rgb(40 / 255, 40 / 255, 40 / 255))
 Gimp.Image.select_rectangle(img, Gimp.ChannelOps.REPLACE, 0, 0, 32, 48)
 Gimp.Drawable.edit_fill(layer, Gimp.FillType.FOREGROUND)
-Gimp.context_set_foreground(compat.color((200, 200, 200)))
+Gimp.context_set_foreground(_linear_rgb(200 / 255, 200 / 255, 200 / 255))
 Gimp.Image.select_rectangle(img, Gimp.ChannelOps.REPLACE, 32, 0, 32, 48)
 Gimp.Drawable.edit_fill(layer, Gimp.FillType.FOREGROUND)
 Gimp.Selection.none(img)

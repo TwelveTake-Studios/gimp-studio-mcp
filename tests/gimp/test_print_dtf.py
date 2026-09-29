@@ -481,11 +481,11 @@ def test_clean_for_dtf(gimp, grp):
 def test_despill(gimp, grp, fx):
     # Point it at the red shape so it has something to act on.
     before = _probe_pixel(gimp, fx["layer_id"], 150, 100)["result"]["rgba"]
-    r = grp._despill(gimp, image=fx["id"], color=(217, 26, 26), amount=0.8)
+    r = grp._despill(gimp, image=fx["id"], color=tuple(before[:3]), amount=0.8)
     assert r["ok"], r["error"]
     res = r["result"]
     assert res["despilled"] is True
-    assert list(res["color"]) == [217, 26, 26]
+    assert list(res["color"]) == before[:3]
     assert res["amount"] == 0.8
     assert "method" in res
     # When the GEGL path is taken (not a noop), the center pixel must change.

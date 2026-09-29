@@ -16,6 +16,10 @@ GROUP = "color_tone"
 # so every tone op has structure to change. Only the final ``_result`` key is named
 # "image" (instead of the spike's "id") so the fx fixture + cleanup can find it.
 _FIXTURE_CODE = """
+def _linear_rgb(r, g, b):
+    c = Gegl.Color.new("black")
+    c.set_rgba(r, g, b, 1.0)
+    return c
 w = 64; h = 48
 img = Gimp.Image.new(w, h, Gimp.ImageBaseType.RGB)
 layer = Gimp.Layer.new(img, "bg", w, h, Gimp.ImageType.RGB_IMAGE,
@@ -29,7 +33,7 @@ Gimp.context_push()
 for i in range(8):
     x0 = i * 8
     v = i / 7.0
-    col = compat.color((v, 0.5, 1.0 - v))
+    col = _linear_rgb(v, 0.5, 1.0 - v)
     Gimp.context_set_foreground(col)
     img.select_rectangle(Gimp.ChannelOps.REPLACE, x0, 0, 8, h)
     layer.edit_fill(Gimp.FillType.FOREGROUND)
