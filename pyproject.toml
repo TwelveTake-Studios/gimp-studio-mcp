@@ -114,3 +114,6 @@ line-length = 100
 target-version = "py310"
 # spike/ = throwaway precursor harnesses (not maintained); scratch/ = local junk.
 extend-exclude = ["spike", "scratch"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
