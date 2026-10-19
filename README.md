@@ -12,26 +12,26 @@ A [TwelveTake Studios](https://twelvetake.com) project.
 
 Listed in the [MCP Registry](https://registry.modelcontextprotocol.io/) as `mcp-name: com.twelvetake/gimp-studio-mcp`.
 
-A comprehensive **GIMP 3.x MCP server** that gives an AI agent full, reliable control of GIMP — with structured returns, real error capture, a GIMP-3 compatibility layer, safety checkpoints, and print/DTF-aware tooling.
+GIMP Studio MCP is a Model Context Protocol server that enables AI assistants to edit images in GIMP 3. Every tool returns a structured result with captured errors, and checkpoints restore an earlier state of the image on request. It includes tools for print and DTF (direct-to-film) transfer production.
 
-**119 tools across 13 groups**, each behaviorally tested against a real (headless) GIMP. Built for a working print shop's DTF (direct-to-film) pipeline, not as a thin API wrapper.
+**119 tools across 13 groups**, each tested against a real GIMP instance.
 
 **Status:** beta. Tested on GIMP **3.2.4**, headless and live. Releases up to 0.3.3 were also tested on GIMP 3.0.4.
 
-## Why this exists
+## Why this server
 
-Other GIMP MCP servers exist. This one is built around print and DTF production: real inches at print DPI, shirt-color knockout and transparent PNGs ready for film. Every tool returns a structured result, so the agent doesn't write GIMP Python by hand for everyday edits.
+It is built around print and DTF production: physical dimensions at print resolution, garment-color knockout, and transparent PNG output ready for film. Every tool returns a structured result, so the assistant does not need to write GIMP Python for routine edits.
 
 ### The design rules (every tool follows these)
 
-1. **Structured returns** — `{ ok, result, stdout, warnings, error }`; output is never lost, even on error.
-2. **Raw `exec` stays** — the universal escape hatch (`gimp_exec`) survives, with proper capture. (Opt out with `GIMP_MCP_NO_EXEC=1` — see [Security model](#security-model).)
-3. **Compat / quirk layer** — one module owns GIMP-3 gotchas so nobody relearns them per session.
-4. **Mode-agnostic tools** — work identically whether GIMP is live (visible canvas) or headless.
-5. **Vision-first** — `get_bitmap` returns a viewable image the agent can actually see (with region/scale/byte-budget), for self-verification.
-6. **Safety by default** — `checkpoint` / `restore` around destructive ops.
+1. **Structured returns:** `{ ok, result, stdout, warnings, error }`; output is never lost, even on error.
+2. **Raw `exec` stays:** the universal escape hatch (`gimp_exec`) survives, with proper capture. (Opt out with `GIMP_MCP_NO_EXEC=1`; see [Security model](#security-model).)
+3. **Compat / quirk layer:** one module handles GIMP 3 differences and known issues.
+4. **Mode-agnostic tools:** work identically whether GIMP is live (visible canvas) or headless.
+5. **Vision-first:** `get_bitmap` returns a viewable image the agent can actually see (with region/scale/byte-budget), for self-verification.
+6. **Safety by default:** `checkpoint` / `restore` around destructive ops.
 7. **Validated params** everywhere.
-8. **Print-aware throughout** — DPI / inches are first-class; DTF output is a headline feature.
+8. **Print-aware throughout:** DPI / inches are first-class; DTF output is a headline feature.
 
 ## Architecture (hybrid, day one)
 
