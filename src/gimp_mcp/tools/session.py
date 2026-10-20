@@ -5,7 +5,7 @@ by the server's GimpContext, not exposed as agent tools.)
 """
 from __future__ import annotations
 
-import os
+from gimp_mcp import install, settings
 
 
 def exec_disabled() -> bool:
@@ -15,7 +15,22 @@ def exec_disabled() -> bool:
     registering it — the rest of the structured tool surface is unaffected.
     See SECURITY.md and the README "Security model" section.
     """
-    return os.environ.get("GIMP_MCP_NO_EXEC", "").strip().lower() in {"1", "true", "yes", "on"}
+    return settings.flag(settings.NO_EXEC)
+
+
+def _status(ctx) -> dict:
+    env = ctx.call("info").to_dict()
+    if not env.get("ok"):
+        return env
+    result = env.get("result") or {}
+    running = ctx.bridge_version() or result.get("bridge_version")
+    warnings = list(env.get("warnings") or [])
+    stale = install.older_bridge_warning(running)
+    if stale:
+        warnings.append(stale)
+    warnings.extend(settings.problems())
+    env["warnings"] = warnings
+    return env
 
 
 def register(mcp, ctx) -> None:
@@ -23,8 +38,10 @@ def register(mcp, ctx) -> None:
     @mcp.tool(name="status")
     def status() -> dict:
         """GIMP/bridge health: GIMP version, bridge version, mode, open-image count,
-        and the names seeded into the persistent namespace."""
-        return ctx.call("info").to_dict()
+        and the names seeded into the persistent namespace. `warnings` reports a
+        bridge in GIMP older than this package expects, and any timeout setting
+        that is not a usable number of seconds."""
+        return _status(ctx)
 
     @mcp.tool(name="list_images")
     def list_images() -> dict:
@@ -33,8 +50,11 @@ def register(mcp, ctx) -> None:
 
     @mcp.tool(name="set_active_image")
     def set_active_image(image: int | str) -> dict:
-        """Set the working image by integer id or basename string."""
-        return ctx.client().set_active_image(image).to_dict()
+        """Set the active image by integer id or basename string. Tools that take
+        `image` act on the active image when it is omitted: the image last chosen
+        here, opened or created, while it stays open; otherwise GIMP's first open
+        image. A checkpoint copy is never the active image."""
+        return ctx.set_active_image(image).to_dict()
 
     if not exec_disabled():
         @mcp.tool(name="gimp_exec")
@@ -59,4 +79,4 @@ def register(mcp, ctx) -> None:
         scope='scratch' (guarded HARD reset): soft + delete only bridge-created
         scratch images (checkpoint snapshots tagged in `_gimpmcp_scratch`); never
         touches user-opened or agent working images."""
-        return ctx.client().reset_namespace(scope).to_dict()
+        return ctx.call("reset_namespace", scope).to_dict()

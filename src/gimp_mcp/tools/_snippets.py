@@ -1,3 +1,5 @@
+CHECKPOINT_TAG = "gimp-mcp-checkpoint"
+
 SAVE_CHECKED = """
 import os
 

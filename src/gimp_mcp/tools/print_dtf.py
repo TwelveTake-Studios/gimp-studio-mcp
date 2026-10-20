@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from gimp_mcp.bridge.protocol import error_response, ok_response
+from gimp_mcp.bridge.protocol import BridgeError, error_response, ok_response
 from gimp_mcp.tools._snippets import SAVE_CHECKED
 
 
@@ -567,8 +567,6 @@ _result = {
 # grows the canvas height as needed, exports a print-ready PNG at dpi.
 # ---------------------------------------------------------------------------
 _GANG_CODE = SAVE_CHECKED + """
-import math
-
 files = list(args.get("files") or [])
 out_path = args["out_path"]
 sheet_w_in = float(args.get("sheet_width_in") or 22.0)
@@ -578,69 +576,99 @@ rotate = bool(args.get("rotate"))
 
 sheet_w = max(1, int(round(sheet_w_in * dpi)))
 gutter = max(0, int(round(gutter_in * dpi)))
-
-# Start with a 1px-tall canvas; grow as the shelf packer needs more rows.
-img = Gimp.Image.new(sheet_w, 1, Gimp.ImageBaseType.RGB)
-img.set_resolution(dpi, dpi)
+usable_w = sheet_w - 2 * gutter
 
 placed = 0
 skipped = []
-cur_x = gutter
-cur_y = gutter
-shelf_h = 0
-max_used_h = gutter
+refused = None
+if not files:
+    refused = "no designs were given"
+elif usable_w < 1:
+    refused = ("a %g in gutter leaves no printable width on a %g in sheet"
+               % (gutter_in, sheet_w_in))
 
-for path in files:
-    f = Gio.File.new_for_path(path)
+img = None
+if refused is None:
+    img = Gimp.Image.new(sheet_w, 1, Gimp.ImageBaseType.RGB)
+    img.set_resolution(dpi, dpi)
+    cur_x = gutter
+    cur_y = gutter
+    shelf_h = 0
+    max_used_h = gutter
+    for path in files:
+        if not os.path.isfile(path):
+            skipped.append({"path": path, "error": "file not found"})
+            continue
+        f = Gio.File.new_for_path(path)
+        try:
+            layer = Gimp.file_load_layer(Gimp.RunMode.NONINTERACTIVE, img, f)
+        except Exception as e:
+            skipped.append({"path": path, "error": type(e).__name__ + ": " + str(e)})
+            continue
+        if layer is None:
+            skipped.append({"path": path, "error": "GIMP could not load the file"})
+            continue
+
+        lw = layer.get_width()
+        lh = layer.get_height()
+        turn = rotate and lw > usable_w and lh <= usable_w
+        if lw > usable_w and not turn:
+            if lh <= usable_w:
+                why = ("%d px wide, wider than the sheet's printable width of %d px; "
+                       "it fits rotated (rotate=True)" % (lw, usable_w))
+            else:
+                why = ("%d x %d px, larger than the sheet's printable width of %d px "
+                       "in either orientation" % (lw, lh, usable_w))
+            skipped.append({"path": path, "error": "too large for the sheet: " + why})
+            try:
+                layer.delete()
+            except Exception:
+                pass
+            continue
+
+        img.insert_layer(layer, None, 0)
+        if turn:
+            layer.transform_rotate_simple(Gimp.RotationType.DEGREES90, True, 0, 0)
+            lw, lh = layer.get_width(), layer.get_height()
+
+        if cur_x + lw + gutter > sheet_w and cur_x > gutter:
+            cur_x = gutter
+            cur_y += shelf_h + gutter
+            shelf_h = 0
+
+        need_h = cur_y + lh + gutter
+        if need_h > img.get_height():
+            img.resize(sheet_w, need_h, 0, 0)
+
+        layer.set_offsets(cur_x, cur_y)
+        cur_x += lw + gutter
+        if lh > shelf_h:
+            shelf_h = lh
+        if cur_y + lh + gutter > max_used_h:
+            max_used_h = cur_y + lh + gutter
+        placed += 1
+    if placed == 0:
+        refused = "none of the designs could be placed"
+
+if refused is not None:
+    if img is not None:
+        img.delete()
+    _result = {"placed": 0, "skipped": skipped, "out_path": out_path, "refused": refused}
+else:
+    final_h = max(1, max_used_h)
     try:
-        layer = Gimp.file_load_layer(Gimp.RunMode.NONINTERACTIVE, img, f)
+        if final_h != img.get_height():
+            img.resize(sheet_w, final_h, 0, 0)
+        img.merge_visible_layers(Gimp.MergeType.CLIP_TO_IMAGE)
+        _save_checked(img, out_path)
     except Exception as e:
-        skipped.append({"path": path, "error": type(e).__name__ + ": " + str(e)})
-        continue
-    img.insert_layer(layer, None, 0)
-
-    lw = layer.get_width()
-    lh = layer.get_height()
-    # Optional 90deg rotate to fit a too-wide item.
-    if rotate and lw > (sheet_w - 2 * gutter) and lh <= (sheet_w - 2 * gutter):
-        layer.transform_rotate_simple(Gimp.RotationType.DEGREES90, True, 0, 0)
-        lw, lh = layer.get_width(), layer.get_height()
-
-    # New shelf if this item won't fit on the current row.
-    if cur_x + lw + gutter > sheet_w and cur_x > gutter:
-        cur_x = gutter
-        cur_y += shelf_h + gutter
-        shelf_h = 0
-
-    # Grow canvas height if needed before placing.
-    need_h = cur_y + lh + gutter
-    if need_h > img.get_height():
-        img.resize(sheet_w, need_h, 0, 0)
-
-    layer.set_offsets(cur_x, cur_y)
-    cur_x += lw + gutter
-    if lh > shelf_h:
-        shelf_h = lh
-    if cur_y + lh + gutter > max_used_h:
-        max_used_h = cur_y + lh + gutter
-    placed += 1
-
-# Final canvas height = last used row + gutter.
-final_h = max(1, max_used_h)
-if final_h != img.get_height():
-    img.resize(sheet_w, final_h, 0, 0)
-
-# Export with alpha preserved: merge visible into one layer, save PNG.
-merged = img.merge_visible_layers(Gimp.MergeType.CLIP_TO_IMAGE)
-try:
-    _save_checked(img, out_path)
-except Exception:
-    img.delete()
-    raise
-
-_result = {"placed": placed, "skipped": skipped,
-           "sheet_px": [sheet_w, final_h], "out_path": out_path,
-           "dpi": dpi, "image": img.get_id()}
+        img.delete()
+        _result = {"placed": placed, "skipped": skipped, "out_path": out_path,
+                   "failed": {"type": type(e).__name__, "message": str(e)}}
+    else:
+        _result = {"placed": placed, "skipped": skipped,
+                   "sheet_px": [sheet_w, final_h], "out_path": out_path,
+                   "dpi": dpi, "image": img.get_id()}
 """
 
 
@@ -855,14 +883,34 @@ def _halftone_separation(ctx, image=None, layer=None, cell_size=8.0, angle=45.0)
                    image=image, undo_group=True).to_dict()
 
 
+def _gang_report(env: dict) -> dict:
+    result = env.get("result")
+    if not env.get("ok") or not isinstance(result, dict):
+        return env
+    reasons = ["%s: %s" % (s.get("path"), s.get("error")) for s in result.get("skipped") or []]
+    out = dict(env)
+    out["warnings"] = list(env.get("warnings") or []) + ["skipped " + r for r in reasons]
+    failed = result.get("failed")
+    if result.get("refused"):
+        etype, message = "NothingPlaced", "no gang sheet was saved: " + result["refused"]
+    elif isinstance(failed, dict):
+        etype, message = failed.get("type") or "Error", failed.get("message") or ""
+    else:
+        return out
+    if reasons:
+        message = "%s. Skipped: %s" % (message.rstrip("."), "; ".join(reasons))
+    out["ok"] = False
+    out["error"] = BridgeError(etype, message).to_dict()
+    return out
+
+
 def _gang_sheet(ctx, files, out_path, sheet_width_in=22.0, dpi=300.0,
                 gutter_in=0.125, rotate=False):
-    # New-image op (no existing image to group).
-    return ctx.run(_GANG_CODE,
-                   args={"files": files, "out_path": out_path,
-                         "sheet_width_in": sheet_width_in, "dpi": dpi,
-                         "gutter_in": gutter_in, "rotate": rotate},
-                   undo_group=False).to_dict()
+    return _gang_report(ctx.run(_GANG_CODE,
+                                args={"files": files, "out_path": out_path,
+                                      "sheet_width_in": sheet_width_in, "dpi": dpi,
+                                      "gutter_in": gutter_in, "rotate": rotate},
+                                undo_group=False).to_dict())
 
 
 def _bleed_and_safe(ctx, image=None, bleed_in=0.125, safe_in=0.125):
@@ -1013,7 +1061,11 @@ def register(mcp, ctx) -> None:
                    rotate: bool = False) -> dict:
         """Lay out multiple design files on a print sheet via a left-to-right /
         top-to-bottom shelf packer (gutter between items), growing height as
-        needed, then export a transparent PNG. Returns {placed, sheet_px, out_path}."""
+        needed, then export a transparent PNG. A design wider than the sheet's
+        printable width is skipped with a warning; with `rotate=True`, a design
+        that fits when turned 90 degrees is rotated instead. If no design can be
+        placed, nothing is saved and the call returns ok=false with each file's
+        reason. Returns {placed, skipped, sheet_px, out_path, image}."""
         return _gang_sheet(ctx, files, out_path, sheet_width_in, dpi,
                            gutter_in, rotate)
 

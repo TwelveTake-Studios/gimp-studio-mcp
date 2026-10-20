@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 
+from . import settings
 from .bridge import protocol as P  # stdlib-only; gives us gimp_user_dir() + the bridge dir
 
 PLUGIN_FOLDER = "gimp-mcp-bridge"  # folder AND file stem (must match — GIMP rule)
@@ -54,6 +55,22 @@ def _bridge_version(path: str) -> str | None:
 
 def source_bridge_version() -> str | None:
     return _bridge_version(os.path.join(_BRIDGE_DIR, "gimp_side.py"))
+
+
+def _version_tuple(version) -> tuple[int, ...] | None:
+    try:
+        return tuple(int(part) for part in str(version).split("."))
+    except ValueError:
+        return None
+
+
+def older_bridge_warning(running: str | None) -> str | None:
+    expected = source_bridge_version()
+    have, want = _version_tuple(running), _version_tuple(expected)
+    if have is None or want is None or have >= want:
+        return None
+    return ("GIMP is running bridge %s, older than the bridge %s this package ships. "
+            "Run `gimp-mcp install-plugin --force`, then restart GIMP." % (running, expected))
 
 
 # ---------------------------------------------------------------------------
@@ -133,18 +150,28 @@ def doctor(gimp_dir: str | None = None, headless: bool = False) -> tuple[bool, l
     except FileNotFoundError as e:
         lines.append("gimp-console : NOT FOUND (%s)" % e)
 
+    lines.append("timeouts     : %s" % settings.describe_timeouts())
+    for problem in settings.problems():
+        lines.append("  ! %s" % problem)
+
     # Live reachability
     endpoint = P.default_endpoint_file()
     if os.path.exists(endpoint):
         try:
-            client = launcher.attach_live(timeout=5.0)
-            info = client.info()
-            client.close()
+            client = launcher.attach_live()
+            try:
+                info = client.info()
+            finally:
+                client.close()
             if info.ok:
                 lines.append("live bridge  : REACHABLE — GIMP %s, bridge v%s (pid %s)"
                              % (info.result.get("gimp_version"),
                                 info.result.get("bridge_version"),
                                 info.result.get("pid")))
+                stale = older_bridge_warning(
+                    client.bridge_version or info.result.get("bridge_version"))
+                if stale:
+                    lines.append("  ! %s" % stale)
             else:
                 ok = False
                 lines.append("live bridge  : connected but info failed: %s" % info.error)
@@ -158,11 +185,17 @@ def doctor(gimp_dir: str | None = None, headless: bool = False) -> tuple[bool, l
     if headless:
         try:
             hg = launcher.launch_headless()
-            info = hg.client.info()
-            hg.shutdown()
+            try:
+                info = hg.client.info()
+            finally:
+                hg.shutdown()
             if info.ok:
                 lines.append("headless     : OK - spawned GIMP %s, round-trip succeeded"
                              % info.result.get("gimp_version"))
+                stale = older_bridge_warning(
+                    hg.client.bridge_version or info.result.get("bridge_version"))
+                if stale:
+                    lines.append("  ! %s" % stale)
             else:
                 ok = False
                 lines.append("headless     : spawned but info failed: %s" % info.error)

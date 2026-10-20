@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import socket
+import struct
 import sys
 import threading
 
@@ -39,9 +40,12 @@ class FakeBridgeServer:
     real bridge's drop-unauthenticated behaviour).
     """
 
-    def __init__(self, token: str | None = None, host: str = "127.0.0.1") -> None:
+    def __init__(self, token: str | None = None, host: str = "127.0.0.1",
+                 bridge_version: str | None = None) -> None:
         self.token = token if token is not None else P.new_token()
         self.host = host
+        self.bridge_version = bridge_version
+        self.conns: list[socket.socket] = []
         self._srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._srv.bind((host, 0))
@@ -62,15 +66,38 @@ class FakeBridgeServer:
         self._ready.wait(timeout=2.0)
         return self
 
-    def stop(self) -> None:
+    def stop(self, abortive: bool = False) -> None:
         self._stop.set()
         try:
             self._srv.close()
         except OSError:
             pass
+        self.drop_connections(abortive=abortive)
         for t in list(self._threads):
             t.join(timeout=1.0)
         self._accept_thread.join(timeout=1.0)
+
+    def drop_connections(self, abortive: bool = False) -> None:
+        with self._lock:
+            conns, self.conns = list(self.conns), []
+        for conn in conns:
+            try:
+                if abortive:
+                    linger = "HH" if sys.platform == "win32" else "ii"
+                    conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
+                                    struct.pack(linger, 1, 0))
+                    conn.shutdown(socket.SHUT_RD)
+                else:
+                    conn.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
+                conn.close()
+            except OSError:
+                pass
+
+    def write_endpoint(self, path: str) -> None:
+        P.write_endpoint_file(path, {"host": self.host, "port": self.port, "token": self.token})
 
     @property
     def endpoint(self) -> tuple[str, int, str]:
@@ -90,6 +117,7 @@ class FakeBridgeServer:
             t = threading.Thread(target=self._serve_conn, args=(conn,), daemon=True)
             with self._lock:
                 self._threads.append(t)
+                self.conns.append(conn)
             t.start()
 
     # -- per-connection handler --------------------------------------------
@@ -105,7 +133,10 @@ class FakeBridgeServer:
             if not P.tokens_equal(tok, self.token):
                 P.send_message(conn, P.error_response("AuthError", "bad token"))
                 return
-            P.send_message(conn, P.ok_response({"authed": True}))
+            authed = {"authed": True}
+            if self.bridge_version is not None:
+                authed["bridge_version"] = self.bridge_version
+            P.send_message(conn, P.ok_response(authed))
 
             # 2) Serve ops until the peer goes away.
             while not self._stop.is_set():
@@ -154,3 +185,19 @@ def fake_bridge():
         yield srv
     finally:
         srv.stop()
+
+
+@pytest.fixture
+def bridge_factory():
+    made: list[FakeBridgeServer] = []
+
+    def make(**kwargs) -> FakeBridgeServer:
+        srv = FakeBridgeServer(**kwargs).start()
+        made.append(srv)
+        return srv
+
+    try:
+        yield make
+    finally:
+        for srv in made:
+            srv.stop()

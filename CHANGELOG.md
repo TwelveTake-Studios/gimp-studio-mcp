@@ -6,6 +6,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-20
+
+This release updates the server package only. The GIMP bridge plug-in is unchanged from 0.3.4. If
+you are upgrading from 0.3.3 or earlier, run `gimp-mcp install-plugin --force` and restart GIMP;
+`status` and `gimp-mcp doctor` now report when this is needed.
+
+### Added
+- **Timeout settings.** Three environment variables set how long the server waits, in seconds:
+  `GIMP_MCP_OPERATION_TIMEOUT` for a single GIMP operation (default 120), `GIMP_MCP_START_TIMEOUT`
+  for a headless GIMP to start (default 60) and `GIMP_MCP_CONNECT_TIMEOUT` for connecting to GIMP
+  (default 10). `gimp-mcp doctor` reports the values in effect, and `status` and `doctor` report
+  any value that is not a usable number of seconds.
+- **Bridge version check.** `status` and `gimp-mcp doctor` report a warning when GIMP is running
+  an older bridge plug-in than the installed package provides, and name the command that updates
+  it.
+- **`gimp-mcp --version`** prints the package and bridge versions.
+
+### Fixed
+- **The first tool call after GIMP restarts now succeeds.** The server detects a closed connection
+  before it sends a request and reconnects to the restarted GIMP. Previously the first call failed
+  with a connection error, such as `WinError 10054` on Windows, and only the next call succeeded.
+- **Connection failures return a structured error.** When GIMP is not running or cannot be
+  reached, every tool, including `set_active_image` and `reset_namespace`, returns `ok: false`
+  with an error that names `gimp-mcp doctor`. Previously the request failed with an MCP error
+  instead of a structured result.
+- **The connection handshake has a time limit.** A process that accepts the connection but never
+  responds produces an error after the connect timeout. Previously the server waited indefinitely.
+- **`set_active_image` now takes effect.** Tools called without `image` act on the image last
+  selected with `set_active_image`, or on an image opened or created after that selection. If the
+  selected image is closed, they act on GIMP's first open image. Previously the selection was
+  ignored.
+- **Checkpoint copies are never the active image.** Previously, after `checkpoint`, tools called
+  without `image` edited the checkpoint copy instead of the working image. They now act on the
+  working image, and `set_active_image` refuses a checkpoint copy.
+- **`gang_sheet` skips designs that are too large for the sheet.** A design wider than the sheet's
+  printable width was placed and clipped. It is now skipped and listed in `warnings`. With
+  `rotate=True`, a design that fits after a 90-degree rotation is rotated.
+- **`gang_sheet` refuses an empty sheet.** When no design can be placed, it saves nothing and
+  returns `ok: false` with the reason for each file. If the sheet cannot be saved, the error also
+  lists the reason for each skipped file. A missing design file is skipped with a reason instead
+  of stopping the whole sheet.
+- **`GIMP_MCP_HEADLESS=0` no longer forces headless mode.** The variable accepts `1`, `true`,
+  `yes` or `on`, the same values as `GIMP_MCP_NO_EXEC`. Any other value lets the server attach to
+  a running GIMP.
+- **MCP clients receive the server's version.** The server reported the MCP SDK version, for
+  example 1.28.0, as its own. It now reports the package version.
+- **Clearer first-run errors.** When the bridge plug-in is not installed, the error names
+  `gimp-mcp install-plugin` and `gimp-mcp doctor`. When GIMP's `gimp-console` executable cannot be
+  found, the error names `GIMP_MCP_EXE`; it no longer refers to a `--gimp-exe` option that does
+  not exist.
+
 ## [0.3.4] - 2026-09-29
 
 **After you update, run `gimp-mcp install-plugin --force`, then restart GIMP.** The color fixes
@@ -263,7 +314,8 @@ bridge, verified against real GIMP **3.0.4** and **3.2.4**.
   over stdio) and scrubs `PYTHONPATH` / `PYTHONHOME` so the external venv never
   leaks into GIMP's Python.
 
-[Unreleased]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.4...v0.4.0
 [0.3.4]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/TwelveTake-Studios/gimp-studio-mcp/compare/v0.3.1...v0.3.2

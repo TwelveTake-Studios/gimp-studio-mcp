@@ -20,6 +20,7 @@ globals()["_gimpmcp_scratch"].
 from __future__ import annotations
 
 from gimp_mcp.bridge.protocol import unsupported_response
+from gimp_mcp.tools._snippets import CHECKPOINT_TAG
 
 # checkpoint: duplicate the target image; stash the dup's id under a fresh int
 # cid in the persistent checkpoint map AND in the scratch set. A duplicate is a
@@ -32,6 +33,10 @@ scratch = globals().setdefault("_gimpmcp_scratch", set())
 _next = globals().get("_gimpmcp_cp_counter", 0) + 1
 globals()["_gimpmcp_cp_counter"] = _next
 dup = img.duplicate()
+try:
+    dup.attach_parasite(Gimp.Parasite.new(args["tag"], 0, b"1"))
+except Exception:
+    pass
 _dup_id = dup.get_id()
 # Record BOTH the snapshot AND the origin image id so restore() can target the
 # image the checkpoint was taken from — never the (possibly unrelated) active image.
@@ -187,7 +192,7 @@ else:
 
 
 def _checkpoint(ctx, image=None, label=None):
-    return ctx.run(_CHECKPOINT_CODE, args={"image": image, "label": label},
+    return ctx.run(_CHECKPOINT_CODE, args={"image": image, "label": label, "tag": CHECKPOINT_TAG},
                    undo_group=False).to_dict()
 
 
@@ -196,7 +201,7 @@ def _restore(ctx, checkpoint_id, image=None):
     # the run target and inside args, and wrap in one undo group.
     return ctx.run(_RESTORE_CODE,
                    args={"checkpoint_id": checkpoint_id, "image": image},
-                   image=image, undo_group=True).to_dict()
+                   image=image, undo_group=True, default_image=False).to_dict()
 
 
 def _list_checkpoints(ctx):

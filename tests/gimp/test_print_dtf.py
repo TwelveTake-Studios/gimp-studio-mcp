@@ -752,3 +752,93 @@ _result = {"id": img.get_id(), "lid": layer.get_id()}
         assert r["result"]["contiguous"] is True, r["result"]
     finally:
         _del_img(gimp, iid)
+
+
+_IMAGE_COUNT_CODE = "_result = len(Gimp.get_images())"
+
+
+def _image_count(gimp):
+    r = gimp.run(_IMAGE_COUNT_CODE, undo_group=False).to_dict()
+    assert r["ok"], r["error"]
+    return r["result"]
+
+
+def test_gang_sheet_skips_an_oversize_design_with_a_warning(gimp, grp, tmp_path):
+    small = _make_tiny(gimp, str(tmp_path / "small.png"), 80, 60, "blue")
+    wide = _make_tiny(gimp, str(tmp_path / "wide.png"), 700, 50, "green")
+    out = str(tmp_path / "sheet.png")
+    r = grp._gang_sheet(gimp, [small, wide], out, sheet_width_in=4.0, dpi=150.0,
+                        gutter_in=0.0625, rotate=False)
+    assert r["ok"], r["error"]
+    res = r["result"]
+    assert res["placed"] == 1
+    assert [s["path"] for s in res["skipped"]] == [wide]
+    assert "too large for the sheet" in res["skipped"][0]["error"]
+    assert "rotate=True" in res["skipped"][0]["error"]
+    assert len(r["warnings"]) == 1 and "wide.png" in r["warnings"][0]
+    assert res["sheet_px"][0] == 600
+    assert res["sheet_px"][1] < 100
+    assert os.path.exists(out)
+    _del_img(gimp, res["image"])
+
+
+def test_gang_sheet_rotates_a_design_that_fits_turned(gimp, grp, tmp_path):
+    wide = _make_tiny(gimp, str(tmp_path / "wide.png"), 700, 50, "green")
+    out = str(tmp_path / "sheet.png")
+    r = grp._gang_sheet(gimp, [wide], out, sheet_width_in=4.0, dpi=150.0,
+                        gutter_in=0.0625, rotate=True)
+    assert r["ok"], r["error"]
+    assert r["result"]["placed"] == 1
+    assert r["warnings"] == []
+    assert r["result"]["sheet_px"][1] >= 700
+    _del_img(gimp, r["result"]["image"])
+
+
+def test_gang_sheet_skips_a_design_too_large_either_way(gimp, grp, tmp_path):
+    small = _make_tiny(gimp, str(tmp_path / "small.png"), 80, 60, "blue")
+    huge = _make_tiny(gimp, str(tmp_path / "huge.png"), 700, 700, "yellow")
+    out = str(tmp_path / "sheet.png")
+    r = grp._gang_sheet(gimp, [huge, small], out, sheet_width_in=4.0, dpi=150.0,
+                        gutter_in=0.0625, rotate=True)
+    assert r["ok"], r["error"]
+    assert r["result"]["placed"] == 1
+    assert "either orientation" in r["result"]["skipped"][0]["error"]
+    assert len(r["warnings"]) == 1
+    _del_img(gimp, r["result"]["image"])
+
+
+def test_gang_sheet_refuses_an_empty_sheet_with_the_reasons(gimp, grp, tmp_path):
+    huge = _make_tiny(gimp, str(tmp_path / "huge.png"), 700, 700, "yellow")
+    missing = str(tmp_path / "missing.png")
+    out = str(tmp_path / "sheet.png")
+    before = _image_count(gimp)
+    r = grp._gang_sheet(gimp, [huge, missing], out, sheet_width_in=4.0, dpi=150.0,
+                        gutter_in=0.0625, rotate=True)
+    assert r["ok"] is False
+    assert r["error"]["type"] == "NothingPlaced"
+    assert "huge.png" in r["error"]["message"]
+    assert "missing.png" in r["error"]["message"]
+    assert [s["path"] for s in r["result"]["skipped"]] == [huge, missing]
+    assert len(r["warnings"]) == 2
+    assert not os.path.exists(out)
+    assert _image_count(gimp) == before
+
+
+def test_gang_sheet_refuses_an_empty_file_list(gimp, grp, tmp_path):
+    out = str(tmp_path / "sheet.png")
+    r = grp._gang_sheet(gimp, [], out)
+    assert r["ok"] is False
+    assert r["error"]["type"] == "NothingPlaced"
+    assert not os.path.exists(out)
+
+
+def test_gang_sheet_keeps_reasons_when_the_save_fails(gimp, grp, tmp_path):
+    small = _make_tiny(gimp, str(tmp_path / "small.png"), 80, 60, "blue")
+    missing = str(tmp_path / "missing.png")
+    out = str(tmp_path / "no-such-folder" / "sheet.png")
+    r = grp._gang_sheet(gimp, [small, missing], out, sheet_width_in=4.0, dpi=150.0)
+    assert r["ok"] is False
+    assert r["error"]["type"] == "FileNotFoundError"
+    assert "no-such-folder" in r["error"]["message"]
+    assert "missing.png" in r["error"]["message"]
+    assert [s["path"] for s in r["result"]["skipped"]] == [missing]

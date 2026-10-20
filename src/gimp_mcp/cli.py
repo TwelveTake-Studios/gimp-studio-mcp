@@ -60,6 +60,7 @@ def _cmd_serve(_args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="gimp-mcp", description="GIMP 3.0 MCP server + bridge tooling")
+    p.add_argument("--version", action="store_true", help="print versions and exit")
     sub = p.add_subparsers(dest="cmd")
 
     sub.add_parser("serve", help="run the MCP server over stdio").set_defaults(func=_cmd_serve)
@@ -89,6 +90,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.version:
+        return _cmd_version(args)
     if not getattr(args, "func", None):
         parser.print_help()
         return 0

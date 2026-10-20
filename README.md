@@ -64,7 +64,7 @@ Tools are self-describing through your MCP client; `describe_op` and `list_*` to
 
 ## Requirements
 
-- **GIMP 3.x** (tested on 3.0.4 and 3.2.4)
+- **GIMP 3.x** (tested on 3.2.4)
 - **Python 3.10+** (for the MCP server)
 - An MCP-compatible AI assistant (e.g. Claude Code / Claude Desktop)
 
@@ -148,11 +148,16 @@ See [SECURITY.md](SECURITY.md) for the full threat model and reporting instructi
 
 | Variable | Effect |
 |----------|--------|
-| `GIMP_MCP_HEADLESS` | Force headless GIMP (spawn `gimp -i`) instead of attaching to a running one. |
+| `GIMP_MCP_HEADLESS` | Always run a headless GIMP (spawn `gimp -i`) instead of attaching to a running one (`1`/`true`/`yes`/`on`). |
 | `GIMP_MCP_NO_EXEC` | Skip registering the raw `gimp_exec` host-code-exec tool (`1`/`true`/`yes`/`on`). |
 | `GIMP_MCP_DISABLED` | The in-GIMP bridge acks and does not serve. |
 | `GIMP_MCP_ENDPOINT_FILE` | Explicit endpoint-file path (advanced / headless). |
 | `GIMP_MCP_PORT` | Pin a bridge port instead of an ephemeral one. |
+| `GIMP_MCP_EXE` | Path to GIMP's `gimp-console` executable, for an installation the server does not find automatically. |
+| `GIMP3_DIRECTORY` | GIMP's own variable for a non-default GIMP profile folder. `gimp-mcp install-plugin` installs the bridge there and `gimp-mcp doctor` checks it there. |
+| `GIMP_MCP_OPERATION_TIMEOUT` | Seconds a single GIMP operation may run before it returns a timeout error (default 120). |
+| `GIMP_MCP_START_TIMEOUT` | Seconds to wait for a headless GIMP to start (default 60). |
+| `GIMP_MCP_CONNECT_TIMEOUT` | Seconds to wait when connecting to GIMP (default 10). |
 
 ## Troubleshooting
 

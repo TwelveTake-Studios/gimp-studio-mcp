@@ -13,14 +13,15 @@ import subprocess
 import tempfile
 import time
 
+from .. import settings
 from . import protocol as P
-from .client import BridgeClient
+from .client import BridgeClient, BridgeConnectionError
 
 
 # ---------------------------------------------------------------------------
 # Live attach
 # ---------------------------------------------------------------------------
-def attach_live(endpoint_file: str | None = None, timeout: float = 10.0) -> BridgeClient:
+def attach_live(endpoint_file: str | None = None, timeout: float | None = None) -> BridgeClient:
     """Connect to an already-running GIMP whose bridge auto-started."""
     client = BridgeClient(endpoint_file=endpoint_file, connect_timeout=timeout)
     client.connect()
@@ -68,7 +69,8 @@ def find_gimp_console(explicit: str | None = None) -> str:
             return hits[-1]  # latest version if several
 
     raise FileNotFoundError(
-        "could not locate gimp-console; pass --gimp-exe or set GIMP_MCP_EXE")
+        "could not locate gimp-console; set GIMP_MCP_EXE to the path of GIMP's "
+        "gimp-console executable")
 
 
 # ---------------------------------------------------------------------------
@@ -105,14 +107,19 @@ class HeadlessGimp:
 def launch_headless(
     gimp_exe: str | None = None,
     endpoint_file: str | None = None,
-    wait: float = 60.0,
+    wait: float | None = None,
 ) -> HeadlessGimp:
     """Spawn a long-running headless GIMP with the bridge loaded, then connect.
 
     The bridge auto-starts (no batch glue needed); we pass it a private endpoint
     file path via env so it never collides with a live GIMP's default endpoint.
     """
-    exe = find_gimp_console(gimp_exe)
+    if wait is None:
+        wait = settings.start_timeout()
+    try:
+        exe = find_gimp_console(gimp_exe)
+    except FileNotFoundError as e:
+        raise BridgeConnectionError(str(e)) from e
 
     if endpoint_file is None:
         fd, endpoint_file = tempfile.mkstemp(suffix="-gimp-mcp-endpoint.json")
@@ -141,18 +148,30 @@ def launch_headless(
     deadline = time.monotonic() + wait
     while not os.path.exists(endpoint_file):
         if proc.poll() is not None:
-            raise RuntimeError(
-                "gimp-console exited (code %s) before publishing its endpoint" % proc.returncode)
+            raise BridgeConnectionError(
+                "headless GIMP exited (code %s) before its bridge started. If the bridge "
+                "is not installed, run `gimp-mcp install-plugin`; run `gimp-mcp doctor` "
+                "to diagnose." % proc.returncode)
         if time.monotonic() > deadline:
             try:
                 proc.terminate()
             except Exception:
                 pass
-            raise TimeoutError("headless GIMP did not publish an endpoint within %ss" % wait)
+            raise BridgeConnectionError(
+                "headless GIMP did not start its bridge within %g seconds (%s). If the "
+                "bridge is not installed, run `gimp-mcp install-plugin`; run `gimp-mcp "
+                "doctor` to diagnose." % (wait, settings.START_TIMEOUT))
         time.sleep(0.25)
 
     client = BridgeClient(endpoint_file=endpoint_file)
-    client.connect()
+    try:
+        client.connect()
+    except Exception:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+        raise
     return HeadlessGimp(proc, client, endpoint_file)
 
 

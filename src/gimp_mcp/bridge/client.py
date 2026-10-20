@@ -9,8 +9,10 @@ module stays stdlib + protocol so it can be exercised without GIMP.
 """
 from __future__ import annotations
 
+import dataclasses
 import socket
 
+from .. import settings
 from . import protocol as P
 from .protocol import BridgeRequest, BridgeResponse
 
@@ -36,15 +38,21 @@ class BridgeClient:
         port: int | None = None,
         token: str | None = None,
         endpoint_file: str | None = None,
-        connect_timeout: float = 10.0,
+        connect_timeout: float | None = None,
         request_timeout: float | None = None,
+        operation_timeout: float | None = None,
     ) -> None:
         self.host = host
         self.port = port
         self.token = token
         self.endpoint_file = endpoint_file
-        self.connect_timeout = connect_timeout
+        self.connect_timeout = (settings.connect_timeout() if connect_timeout is None
+                                else connect_timeout)
         self.request_timeout = request_timeout
+        self.operation_timeout = (settings.operation_timeout() if operation_timeout is None
+                                  else operation_timeout)
+        self.bridge_version: str | None = None
+        self.session: str | None = None
         self._sock: socket.socket | None = None
 
     # ---- discovery --------------------------------------------------------
@@ -57,8 +65,9 @@ class BridgeClient:
             info = P.read_endpoint_file(path)
         except FileNotFoundError as e:
             raise BridgeConnectionError(
-                "bridge endpoint file not found: %s — is GIMP running with the "
-                "bridge installed? (try `gimp-mcp doctor`)" % path
+                "GIMP bridge endpoint file not found: %s. Start GIMP with the bridge "
+                "installed; if it is not installed, run `gimp-mcp install-plugin`. "
+                "Run `gimp-mcp doctor` to diagnose." % path
             ) from e
         except (OSError, ValueError) as e:
             raise BridgeConnectionError("could not read endpoint file %s: %s" % (path, e)) from e
@@ -75,18 +84,20 @@ class BridgeClient:
         except OSError as e:
             raise BridgeConnectionError("cannot connect to bridge at %s:%d: %s"
                                         % (host, port, e)) from e
-        sock.settimeout(self.request_timeout)
-        self._sock = sock
-        # One-time auth handshake (first frame must carry the token).
         try:
             P.send_message(sock, {"op": P.OP_AUTH, "token": token})
             resp = P.recv_message(sock)
-        except OSError as e:
-            self.close()
+        except (OSError, ValueError) as e:
+            sock.close()
             raise BridgeConnectionError("handshake I/O failed: %s" % e) from e
-        if not resp or not resp.get("ok"):
-            self.close()
+        if not isinstance(resp, dict) or not resp.get("ok"):
+            sock.close()
             raise BridgeAuthError("bridge rejected the auth token")
+        sock.settimeout(self.request_timeout)
+        self._sock = sock
+        result = resp.get("result")
+        self.bridge_version = result.get("bridge_version") if isinstance(result, dict) else None
+        self.session = token
 
     def close(self) -> None:
         if self._sock is not None:
@@ -100,15 +111,37 @@ class BridgeClient:
         return self._sock is not None
 
     # ---- request/response -------------------------------------------------
-    def send(self, request: BridgeRequest) -> BridgeResponse:
-        """Send one request, return the structured response."""
+    def _peer_gone(self) -> bool:
+        sock = self._sock
+        try:
+            sock.settimeout(0.0)
+            sock.recv(1, socket.MSG_PEEK)
+        except BlockingIOError:
+            return False
+        except OSError:
+            return True
+        finally:
+            try:
+                sock.settimeout(self.request_timeout)
+            except OSError:
+                pass
+        return True
+
+    def ensure_connected(self) -> None:
+        if self._sock is not None and self._peer_gone():
+            self.close()
         if self._sock is None:
             self.connect()
-        assert self._sock is not None
+
+    def send(self, request: BridgeRequest) -> BridgeResponse:
+        """Send one request, return the structured response."""
+        self.ensure_connected()
+        if request.timeout is None and self.operation_timeout is not None:
+            request = dataclasses.replace(request, timeout=self.operation_timeout)
         try:
             P.send_message(self._sock, request.to_dict())
             raw = P.recv_message(self._sock)
-        except OSError as e:
+        except (OSError, ValueError) as e:
             self.close()
             raise BridgeConnectionError("request I/O failed: %s" % e) from e
         if raw is None:

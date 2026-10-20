@@ -2,18 +2,18 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "com.twelvetake/gimp-studio-mcp",
   "title": "GIMP Studio MCP",
-  "description": "Lets an AI assistant edit images in GIMP 3, including print and DTF transfer prep.",
+  "description": "Enables AI assistants to edit images in GIMP 3, with tools for print and DTF transfer production.",
   "repository": {
     "url": "https://github.com/TwelveTake-Studios/gimp-studio-mcp",
     "source": "github"
   },
   "websiteUrl": "https://twelvetake.com/tools/gimp-studio-mcp/",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "twelvetake-gimp-studio-mcp",
-      "version": "0.3.4",
+      "version": "0.4.0",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
